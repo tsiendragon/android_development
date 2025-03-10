@@ -1,0 +1,301 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:lucky/providers/auth_provider.dart';
+import 'package:lucky/providers/user_provider.dart';
+import 'package:lucky/providers/fortune_provider.dart';
+import 'package:lucky/screens/fortune_screen.dart';
+import 'package:lucky/screens/login_screen.dart';
+import 'package:lucky/utils/constants.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  int _tapCount = 0;
+  bool _canTap = true;
+  
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.9).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    
+    _checkTodayFortune();
+  }
+  
+  Future<void> _checkTodayFortune() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.userId != null) {
+      final fortuneProvider = Provider.of<FortuneProvider>(context, listen: false);
+      await fortuneProvider.checkTodayFortune(authProvider.userId!);
+    }
+  }
+  
+  void _onWoodenFishTap() {
+    if (!_canTap) return;
+    
+    setState(() {
+      _canTap = false;
+    });
+    
+    _animationController.forward().then((_) {
+      _animationController.reverse().then((_) {
+        setState(() {
+          _tapCount++;
+          _canTap = true;
+        });
+        
+        // Update merit points
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.updateMeritPoints(AppConstants.meritPointsPerTap);
+      });
+    });
+  }
+  
+  Future<void> _signOut() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final fortuneProvider = Provider.of<FortuneProvider>(context, listen: false);
+    
+    await authProvider.signOut();
+    userProvider.clearUser();
+    fortuneProvider.clearFortune();
+    
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+    }
+  }
+  
+  void _navigateToFortuneScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FortuneScreen()),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context);
+    final fortuneProvider = Provider.of<FortuneProvider>(context);
+    
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Theme.of(context).colorScheme.primary.withAlpha(204), // 0.8 * 255 = 204
+              Theme.of(context).colorScheme.secondary.withAlpha(153), // 0.6 * 255 = 153
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // App bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '生辰八字运势',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.logout, color: Colors.white),
+                      onPressed: _signOut,
+                    ),
+                  ],
+                ),
+              ),
+              // Date display
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      DateFormat('yyyy年MM月dd日').format(DateTime.now()),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Merit points display
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(230), // 0.9 * 255 = 230
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(26), // 0.1 * 255 = 26
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      '当前功德值',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '${userProvider.meritPoints}',
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE57373),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '今日已敲击: $_tapCount/${AppConstants.maxTapsPerDay}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
+              // Wooden fish
+              Expanded(
+                child: Center(
+                  child: GestureDetector(
+                    onTap: _onWoodenFishTap,
+                    child: ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: Container(
+                        width: 200,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8D6E63),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withAlpha(77), // 0.3 * 255 = 77
+                              blurRadius: 15,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 150,
+                            height: 150,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFA1887F),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Text(
+                                '木鱼',
+                                style: TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Today's fortune card
+              Container(
+                margin: const EdgeInsets.all(16.0),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: InkWell(
+                    onTap: _navigateToFortuneScreen,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '今日运势',
+                                style: Theme.of(context).textTheme.headlineMedium,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          fortuneProvider.todayFortune != null
+                              ? Text(
+                                  '您今日的运势已生成，点击查看详情',
+                                  style: Theme.of(context).textTheme.bodyLarge,
+                                )
+                              : Text(
+                                  '点击生成今日运势',
+                                  style: Theme.of(context).textTheme.bodyLarge,
+                                ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            Icons.arrow_forward,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
