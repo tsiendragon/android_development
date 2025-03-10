@@ -13,26 +13,26 @@ class FortuneProvider extends ChangeNotifier {
   Fortune? _todayFortune;
   bool _isLoading = false;
   String? _error;
-  
+
   Fortune? get todayFortune => _todayFortune;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  
+
   // Reference to the ApiKeyProvider
   ApiKeyProvider? _apiKeyProvider;
-  
+
   // Set the ApiKeyProvider reference
   void setApiKeyProvider(ApiKeyProvider provider) {
     _apiKeyProvider = provider;
   }
-  
+
   // Check if today's fortune is already generated
   Future<bool> checkTodayFortune(String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final fortuneKey = 'fortune_${userId}_$today';
-      
+
       final fortuneData = prefs.getString(fortuneKey);
       if (fortuneData != null) {
         _todayFortune = Fortune.fromJson(json.decode(fortuneData));
@@ -47,33 +47,32 @@ class FortuneProvider extends ChangeNotifier {
       return false;
     }
   }
-  
+
   // Generate today's fortune
   Future<bool> generateTodayFortune(User user) async {
     try {
+      _isLoading = true;
+      notifyListeners();
+
       final today = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(today);
-      
-      // Check if we already have a fortune for today
-      final prefs = await SharedPreferences.getInstance();
-      final fortuneKey = 'fortune_${user.id}_$todayStr';
-      if (prefs.containsKey(fortuneKey)) {
-        // Load today's fortune
-        final fortuneJson = jsonDecode(prefs.getString(fortuneKey)!);
-        _todayFortune = Fortune.fromJson(fortuneJson);
-        notifyListeners();
-        return true;
+
+      if (kDebugMode) {
+        print('Generating fortune for user: ${user.name} on $todayStr');
       }
-      
+
+      // Always generate a new fortune when explicitly requested
+      // (removed the check for existing fortune to allow refresh)
+
       // Calculate Chinese zodiac
       final lunar = Lunar.fromDate(user.birthDate);
       final chineseZodiac = _getChineseZodiac(lunar.getYearZhi());
       final heavenlyStem = lunar.getYearGan(); // 天干
       final earthlyBranch = lunar.getYearZhi(); // 地支
-      
+
       // Generate fortune
       Map<String, dynamic> fortuneResult;
-      
+
       // Check if API key is available
       final apiKeyProvider = _apiKeyProvider;
       if (apiKeyProvider != null && apiKeyProvider.hasApiKey) {
@@ -85,7 +84,7 @@ class FortuneProvider extends ChangeNotifier {
             heavenlyStem,
             earthlyBranch,
             user.meritPoints,
-            apiKeyProvider.openAiApiKey!
+            apiKeyProvider.openAiApiKey!,
           );
         } catch (e) {
           if (kDebugMode) {
@@ -97,7 +96,7 @@ class FortuneProvider extends ChangeNotifier {
             chineseZodiac,
             heavenlyStem,
             earthlyBranch,
-            user.meritPoints
+            user.meritPoints,
           );
         }
       } else {
@@ -107,10 +106,10 @@ class FortuneProvider extends ChangeNotifier {
           chineseZodiac,
           heavenlyStem,
           earthlyBranch,
-          user.meritPoints
+          user.meritPoints,
         );
       }
-      
+
       // Create and save the fortune
       final fortune = Fortune(
         id: 'fortune_${DateTime.now().millisecondsSinceEpoch}',
@@ -122,22 +121,41 @@ class FortuneProvider extends ChangeNotifier {
         careerRating: fortuneResult['careerRating'],
         healthRating: fortuneResult['healthRating'],
         wealthRating: fortuneResult['wealthRating'],
+        thingsToDo: List<String>.from(fortuneResult['thingsToDo'] ?? []),
+        thingsToAvoid: List<String>.from(fortuneResult['thingsToAvoid'] ?? []),
       );
-      
+
       // Save to preferences
+      final prefs = await SharedPreferences.getInstance();
+      final fortuneKey = 'fortune_${user.id}_$todayStr';
       await prefs.setString(fortuneKey, jsonEncode(fortune.toJson()));
-      
+
+      if (kDebugMode) {
+        print('Fortune saved successfully for $todayStr');
+        print('Fortune text: ${fortune.fortuneText}');
+        print(
+          'Ratings: Love=${fortune.loveRating}, Career=${fortune.careerRating}, Health=${fortune.healthRating}, Wealth=${fortune.wealthRating}',
+        );
+        print('Things to do: ${fortune.thingsToDo}');
+        print('Things to avoid: ${fortune.thingsToAvoid}');
+      }
+
       _todayFortune = fortune;
+      _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       if (kDebugMode) {
         print('Error generating fortune: $e');
+        print('Stack trace: ${StackTrace.current}');
       }
+      _error = 'Error generating fortune: $e';
+      _isLoading = false;
+      notifyListeners();
       return false;
     }
   }
-  
+
   // Generate fortune using OpenAI API
   Future<Map<String, dynamic>> _generateOpenAIFortune(
     String name,
@@ -145,19 +163,19 @@ class FortuneProvider extends ChangeNotifier {
     String heavenlyStem,
     String earthlyBranch,
     int meritPoints,
-    String apiKey
+    String apiKey,
   ) async {
     final url = Uri.parse('https://api.openai.com/v1/chat/completions');
-    
+
     final prompt = '''
     作为一位精通中国传统命理学的大师，请根据以下信息为用户生成今日运势预测：
-    
+
     用户姓名: $name
     生肖: $zodiac
     天干: $heavenlyStem
     地支: $earthlyBranch
     功德值: $meritPoints (功德值越高，运势越好)
-    
+
     请提供以下内容：
     1. 今日运势总体评价（详细描述今日的整体运势，包括吉凶祸福）
     2. 爱情运势评分（1-5分）和详细解读
@@ -167,7 +185,7 @@ class FortuneProvider extends ChangeNotifier {
     6. 今日宜做事项（至少3条，具体可行的建议，需要积极向上，偶尔可以加一些心灵鸡汤）
     7. 今日忌做事项（至少3条，具体可行的建议，需要积极向上）
     8. 提升运势的建议（具体可行的建议，包括穿着颜色、行为等）
-    
+
     请使用JSON格式返回，格式如下：
     {
       "text": "运势预测文字...",
@@ -178,15 +196,15 @@ class FortuneProvider extends ChangeNotifier {
       "thingsToDo": ["宜做事项1", "宜做事项2", "宜做事项3"],
       "thingsToAvoid": ["忌做事项1", "忌做事项2", "忌做事项3"]
     }
-    
+
     只返回JSON格式，不要有其他内容。确保返回的JSON格式正确且可解析。
     ''';
-    
+
     try {
       final response = await http.post(
         url,
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
           'Authorization': 'Bearer $apiKey',
         },
         body: jsonEncode({
@@ -194,22 +212,29 @@ class FortuneProvider extends ChangeNotifier {
           'messages': [
             {
               'role': 'system',
-              'content': '你是一位精通中国传统命理学的大师，擅长根据生辰八字分析运势。你的预测应该详细、具体，并且根据用户的功德值给予相应的运势加成。功德值越高，运势应该越好。'
+              'content':
+                  '你是一位精通中国传统命理学的大师，擅长根据生辰八字分析运势。你的预测应该详细、具体，并且根据用户的功德值给予相应的运势加成。功德值越高，运势应该越好。',
             },
-            {
-              'role': 'user',
-              'content': prompt
-            }
+            {'role': 'user', 'content': prompt},
           ],
           'temperature': 0.7,
           'response_format': {'type': 'json_object'},
         }),
       );
-      
+
       if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
+        if (kDebugMode) {
+          print('Raw response: ${utf8.decode(response.bodyBytes)}');
+        }
+
+        final responseData = jsonDecode(utf8.decode(response.bodyBytes));
         final content = responseData['choices'][0]['message']['content'];
-        
+
+        if (kDebugMode) {
+          print('OpenAI API Response received:');
+          print(content);
+        }
+
         // Parse the JSON response
         try {
           final fortuneData = jsonDecode(content);
@@ -219,21 +244,27 @@ class FortuneProvider extends ChangeNotifier {
             if (fortuneData['thingsToDo'] is List) {
               thingsToDo = List<String>.from(fortuneData['thingsToDo']);
             } else if (fortuneData['thingsToDo'] is String) {
-              // Handle case where thingsToDo might be a string
               thingsToDo = [fortuneData['thingsToDo']];
             }
           }
-          
+
+          if (kDebugMode) {
+            print('Parsed thingsToDo: $thingsToDo');
+          }
+
           List<String> thingsToAvoid = [];
           if (fortuneData['thingsToAvoid'] != null) {
             if (fortuneData['thingsToAvoid'] is List) {
               thingsToAvoid = List<String>.from(fortuneData['thingsToAvoid']);
             } else if (fortuneData['thingsToAvoid'] is String) {
-              // Handle case where thingsToAvoid might be a string
               thingsToAvoid = [fortuneData['thingsToAvoid']];
             }
           }
-          
+
+          if (kDebugMode) {
+            print('Parsed thingsToAvoid: $thingsToAvoid');
+          }
+
           return {
             'text': fortuneData['text'] ?? '无法获取运势信息',
             'loveRating': _ensureRatingRange(fortuneData['loveRating']),
@@ -248,30 +279,13 @@ class FortuneProvider extends ChangeNotifier {
             print('Failed to parse OpenAI response: $e');
             print('Raw content: $content');
           }
-          
-          // Try to extract ratings using regex if JSON parsing fails
-          final loveRating = _extractRating(content, '爱情') ?? 3;
-          final careerRating = _extractRating(content, '事业') ?? 3;
-          final healthRating = _extractRating(content, '健康') ?? 3;
-          final wealthRating = _extractRating(content, '财运') ?? 3;
-          
-          // Try to extract things to do and avoid
-          final thingsToDo = _extractListItems(content, '宜') ?? [];
-          final thingsToAvoid = _extractListItems(content, '忌') ?? [];
-          
-          return {
-            'text': content,
-            'loveRating': _ensureRatingRange(loveRating),
-            'careerRating': _ensureRatingRange(careerRating),
-            'healthRating': _ensureRatingRange(healthRating),
-            'wealthRating': _ensureRatingRange(wealthRating),
-            'thingsToDo': thingsToDo,
-            'thingsToAvoid': thingsToAvoid,
-          };
+          throw Exception('Failed to parse OpenAI response');
         }
       } else {
         if (kDebugMode) {
-          print('OpenAI API error: ${response.statusCode} ${response.body}');
+          print(
+            'OpenAI API error: ${response.statusCode} ${utf8.decode(response.bodyBytes)}',
+          );
         }
         throw Exception('OpenAI API error: ${response.statusCode}');
       }
@@ -282,7 +296,7 @@ class FortuneProvider extends ChangeNotifier {
       throw Exception('Error calling OpenAI API');
     }
   }
-  
+
   // Ensure rating is within valid range (1-5)
   int _ensureRatingRange(dynamic rating) {
     int ratingInt;
@@ -305,10 +319,10 @@ class FortuneProvider extends ChangeNotifier {
     } else {
       ratingInt = 3;
     }
-    
+
     return max(1, min(5, ratingInt));
   }
-  
+
   // Extract rating from text using regex
   int? _extractRating(String text, String aspect) {
     // Try different patterns to extract rating
@@ -318,7 +332,7 @@ class FortuneProvider extends ChangeNotifier {
       '$aspect.*?(\\d)\\s*星',
       '$aspect.*?(\\d)\\s*/\\s*5',
     ];
-    
+
     for (final pattern in patterns) {
       final regex = RegExp(pattern);
       final match = regex.firstMatch(text);
@@ -326,34 +340,34 @@ class FortuneProvider extends ChangeNotifier {
         return int.tryParse(match.group(1)!);
       }
     }
-    
+
     // If no match found, look for any digit near the aspect name
     final nearDigitRegex = RegExp('$aspect[^\\d]{0,30}(\\d)');
     final nearMatch = nearDigitRegex.firstMatch(text);
     if (nearMatch != null && nearMatch.groupCount >= 1) {
       return int.tryParse(nearMatch.group(1)!);
     }
-    
+
     return null;
   }
-  
+
   // Extract list items from text
   List<String>? _extractListItems(String text, String keyword) {
     // Try to find sections with the keyword (宜/忌)
     final sectionRegex = RegExp('$keyword[^\\n]*\\n((?:[^\\n]+\\n)+)');
     final sectionMatch = sectionRegex.firstMatch(text);
-    
+
     if (sectionMatch != null && sectionMatch.groupCount >= 1) {
       final sectionText = sectionMatch.group(1)!;
-      
+
       // Extract bullet points or numbered items
       final items = <String>[];
-      
+
       // Try different item patterns
       final bulletRegex = RegExp(r'(?:•|\*|-|\d+\.|\(\d+\))\s*([^\n]+)');
-      
+
       final bulletMatches = bulletRegex.allMatches(sectionText);
-      
+
       if (bulletMatches.isNotEmpty) {
         for (final match in bulletMatches) {
           if (match.groupCount >= 1) {
@@ -373,46 +387,59 @@ class FortuneProvider extends ChangeNotifier {
           }
         }
       }
-      
+
       return items;
     }
-    
+
     // If no section found, try to find individual items
     final itemRegex = RegExp('$keyword[^：]*：([^\\n]+)');
     final itemMatch = itemRegex.firstMatch(text);
-    
+
     if (itemMatch != null && itemMatch.groupCount >= 1) {
       final itemsText = itemMatch.group(1)!;
       final items = itemsText.split('、').map((e) => e.trim()).toList();
       return items.where((item) => item.isNotEmpty).toList();
     }
-    
+
     return null;
   }
-  
+
   // Helper method to get rating description based on rating value
   String _getRatingDescription(String aspect, int rating) {
     switch (rating) {
-      case 0: return '$aspect运势极差，需谨慎行事';
-      case 1: return '$aspect运势不佳，宜低调行事';
-      case 2: return '$aspect运势一般，保持平常心';
-      case 3: return '$aspect运势尚可，有小幸运';
-      case 4: return '$aspect运势良好，可把握机会';
-      case 5: return '$aspect运势极佳，大吉大利';
-      default: return '$aspect运势一般';
+      case 0:
+        return '$aspect运势极差，需谨慎行事';
+      case 1:
+        return '$aspect运势不佳，宜低调行事';
+      case 2:
+        return '$aspect运势一般，保持平常心';
+      case 3:
+        return '$aspect运势尚可，有小幸运';
+      case 4:
+        return '$aspect运势良好，可把握机会';
+      case 5:
+        return '$aspect运势极佳，大吉大利';
+      default:
+        return '$aspect运势一般';
     }
   }
-  
+
   // Generate mock fortune with ratings for all aspects
-  Map<String, dynamic> _generateMockFortuneWithRatings(String name, String zodiac, String heavenlyStem, String earthlyBranch, int meritPoints) {
+  Map<String, dynamic> _generateMockFortuneWithRatings(
+    String name,
+    String zodiac,
+    String heavenlyStem,
+    String earthlyBranch,
+    int meritPoints,
+  ) {
     final fortunes = [
       '今天整体运势不错，工作上可能会有意外收获。建议多关注人际关系，可能会有贵人相助。财运方面平稳，适合理财规划。',
       '今日运势平平，工作中需要更加专注，避免分心。人际关系方面可能会有小摩擦，建议保持冷静。财运一般，不宜大额支出。',
       '今天运势较好，工作效率高，创意思维活跃。人际关系融洽，是社交的好时机。财运上可能有小惊喜，但不宜冲动消费。',
       '今日运势起伏较大，工作中可能遇到挑战，需要耐心应对。人际关系需要多加沟通，避免误会。财运一般，建议量入为出。',
-      '今天运势良好，工作上会得到领导或同事的认可。人际关系和谐，适合拓展社交圈。财运方面有上升趋势，可以考虑适当投资。'
+      '今天运势良好，工作上会得到领导或同事的认可。人际关系和谐，适合拓展社交圈。财运方面有上升趋势，可以考虑适当投资。',
     ];
-    
+
     // 根据功德值调整运势好坏
     int fortuneIndex = 0;
     if (meritPoints > 100) {
@@ -424,25 +451,30 @@ class FortuneProvider extends ChangeNotifier {
     } else {
       fortuneIndex = 1; // 较差的运势
     }
-    
+
     // 生成四个方面的星级评分 (0-5星)
     // 基于功德值、生肖和八字生成随机但有规律的评分
     final random = Random().nextInt(100);
     final baseRating = (meritPoints / 20).clamp(1.0, 5.0).floor();
-    
+
     // 使用不同的计算方式，让各方面评分有所区别
-    int loveRating = (baseRating + (zodiac.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
-    int careerRating = (baseRating + (heavenlyStem.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
+    int loveRating =
+        (baseRating + (zodiac.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
+    int careerRating =
+        (baseRating + (heavenlyStem.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
     int healthRating = (baseRating + (random % 3) - 1).clamp(0, 5).toInt();
-    int wealthRating = (baseRating + (earthlyBranch.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
-    
+    int wealthRating =
+        (baseRating + (earthlyBranch.codeUnitAt(0) % 3) - 1)
+            .clamp(0, 5)
+            .toInt();
+
     // 生成宜做和忌做事项
     final thingsToDo = _generateThingsToDo();
     final thingsToAvoid = _generateThingsToAvoid();
-    
+
     // 添加个性化元素和四个方面的运势描述
     String fortuneText = '''尊敬的$name，
-    
+
 您的生肖为$zodiac，八字天干为$heavenlyStem，地支为$earthlyBranch。根据您的八字和当前功德值($meritPoints)分析：
 
 ${fortunes[fortuneIndex]}
@@ -464,7 +496,7 @@ ${fortunes[fortuneIndex]}
 
 提升今日运势的建议：多行善事，积累功德，保持平和心态。
 ''';
-    
+
     return {
       'text': fortuneText,
       'loveRating': loveRating,
@@ -475,26 +507,39 @@ ${fortunes[fortuneIndex]}
       'thingsToAvoid': thingsToAvoid,
     };
   }
-  
+
   // Get Chinese zodiac based on earthly branch
   String _getChineseZodiac(String earthlyBranch) {
     switch (earthlyBranch) {
-      case '子': return '鼠';
-      case '丑': return '牛';
-      case '寅': return '虎';
-      case '卯': return '兔';
-      case '辰': return '龙';
-      case '巳': return '蛇';
-      case '午': return '马';
-      case '未': return '羊';
-      case '申': return '猴';
-      case '酉': return '鸡';
-      case '戌': return '狗';
-      case '亥': return '猪';
-      default: return '未知';
+      case '子':
+        return '鼠';
+      case '丑':
+        return '牛';
+      case '寅':
+        return '虎';
+      case '卯':
+        return '兔';
+      case '辰':
+        return '龙';
+      case '巳':
+        return '蛇';
+      case '午':
+        return '马';
+      case '未':
+        return '羊';
+      case '申':
+        return '猴';
+      case '酉':
+        return '鸡';
+      case '戌':
+        return '狗';
+      case '亥':
+        return '猪';
+      default:
+        return '未知';
     }
   }
-  
+
   // Generate things to do for mock fortune
   List<String> _generateThingsToDo() {
     final options = [
@@ -517,25 +562,25 @@ ${fortunes[fortuneIndex]}
       '表达感谢，培养感恩之心',
       '分享知识，帮助他人',
       '保持微笑，传递快乐',
-      '尝试新的运动方式，增强体质'
+      '尝试新的运动方式，增强体质',
     ];
-    
+
     final random = Random();
     final result = <String>[];
     final indices = <int>{};
-    
+
     // Select 3 unique items
     while (indices.length < 3) {
       indices.add(random.nextInt(options.length));
     }
-    
+
     for (final index in indices) {
       result.add(options[index]);
     }
-    
+
     return result;
   }
-  
+
   // Generate things to avoid for mock fortune
   List<String> _generateThingsToAvoid() {
     final options = [
@@ -558,40 +603,40 @@ ${fortunes[fortuneIndex]}
       '回避问题，延误解决时机',
       '过度自我怀疑，影响信心',
       '忽视细节，造成失误',
-      '盲目跟风，失去自我判断'
+      '盲目跟风，失去自我判断',
     ];
-    
+
     final random = Random();
     final result = <String>[];
     final indices = <int>{};
-    
+
     // Select 3 unique items
     while (indices.length < 3) {
       indices.add(random.nextInt(options.length));
     }
-    
+
     for (final index in indices) {
       result.add(options[index]);
     }
-    
+
     return result;
   }
-  
+
   // Save fortune to favorites
   Future<bool> toggleFavorite() async {
     if (_todayFortune == null) return false;
-    
+
     try {
       final updatedFortune = _todayFortune!.copyWith(
         isFavorite: !_todayFortune!.isFavorite,
       );
-      
+
       final prefs = await SharedPreferences.getInstance();
       final today = DateFormat('yyyy-MM-dd').format(_todayFortune!.date);
       final fortuneKey = 'fortune_${_todayFortune!.userId}_$today';
-      
+
       await prefs.setString(fortuneKey, json.encode(updatedFortune.toJson()));
-      
+
       _todayFortune = updatedFortune;
       notifyListeners();
       return true;
@@ -602,7 +647,7 @@ ${fortunes[fortuneIndex]}
       return false;
     }
   }
-  
+
   void clearFortune() {
     _todayFortune = null;
     _isLoading = false;

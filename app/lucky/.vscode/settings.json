@@ -1,12 +1,12 @@
 {
     "workbench.colorCustomizations": {
-        "titleBar.activeBackground": "#f6c430",
+        "titleBar.activeBackground": "#f8e0b0",
         "titleBar.activeForeground": "#000",
-        "titleBar.inactiveBackground": "#f6c430",
+        "titleBar.inactiveBackground": "#f8e0b0",
         "titleBar.inactiveForeground": "#000",
         "statusBarItem.hoverBackground": "#0000004D",
-        "statusBarItem.remoteBackground": "#ffe24e",
+        "statusBarItem.remoteBackground": "#fffece",
         "statusBarItem.remoteForeground": "#000"
     },
-    "coralize.color": "#f6c430"
+    "coralize.color": "#f8e0b0"
 }

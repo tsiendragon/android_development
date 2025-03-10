@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucky/providers/api_key_provider.dart';
+import 'package:lucky/providers/theme_provider.dart';
 import 'package:lucky/utils/version.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -31,14 +32,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveApiKey() async {
     if (_formKey.currentState!.validate()) {
-      final apiKeyProvider = Provider.of<ApiKeyProvider>(context, listen: false);
-      final success = await apiKeyProvider.saveApiKey(_apiKeyController.text.trim());
-      
+      final apiKeyProvider = Provider.of<ApiKeyProvider>(
+        context,
+        listen: false,
+      );
+      final success = await apiKeyProvider.saveApiKey(
+        _apiKeyController.text.trim(),
+      );
+
       if (mounted) {
         if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('API密钥已保存')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('API密钥已保存')));
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(apiKeyProvider.error ?? '保存API密钥失败')),
@@ -51,13 +57,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _deleteApiKey() async {
     final apiKeyProvider = Provider.of<ApiKeyProvider>(context, listen: false);
     final success = await apiKeyProvider.deleteApiKey();
-    
+
     if (mounted) {
       if (success) {
         _apiKeyController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('API密钥已删除')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('API密钥已删除')));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(apiKeyProvider.error ?? '删除API密钥失败')),
@@ -75,7 +81,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final apiKeyProvider = Provider.of<ApiKeyProvider>(context);
-    
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('设置'),
@@ -87,6 +94,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Theme settings section
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.palette,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '主题设置',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      title: const Text('跟随系统'),
+                      leading: const Icon(Icons.brightness_auto),
+                      trailing: Radio<ThemeMode>(
+                        value: ThemeMode.system,
+                        groupValue: themeProvider.themeMode,
+                        onChanged: (ThemeMode? value) {
+                          if (value != null) {
+                            themeProvider.setThemeMode(value);
+                          }
+                        },
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('浅色模式'),
+                      leading: const Icon(Icons.light_mode),
+                      trailing: Radio<ThemeMode>(
+                        value: ThemeMode.light,
+                        groupValue: themeProvider.themeMode,
+                        onChanged: (ThemeMode? value) {
+                          if (value != null) {
+                            themeProvider.setThemeMode(value);
+                          }
+                        },
+                      ),
+                    ),
+                    ListTile(
+                      title: const Text('深色模式'),
+                      leading: const Icon(Icons.dark_mode),
+                      trailing: Radio<ThemeMode>(
+                        value: ThemeMode.dark,
+                        groupValue: themeProvider.themeMode,
+                        onChanged: (ThemeMode? value) {
+                          if (value != null) {
+                            themeProvider.setThemeMode(value);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
             // API Key section
             Card(
               elevation: 2,
@@ -130,7 +206,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               IconButton(
                                 icon: Icon(
-                                  _obscureApiKey ? Icons.visibility : Icons.visibility_off,
+                                  _obscureApiKey
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
                                 ),
                                 onPressed: () {
                                   setState(() {
@@ -162,22 +240,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: apiKeyProvider.isLoading ? null : _saveApiKey,
+                        onPressed:
+                            apiKeyProvider.isLoading ? null : _saveApiKey,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: apiKeyProvider.isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('保存'),
+                        child:
+                            apiKeyProvider.isLoading
+                                ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Text('保存'),
                       ),
                     ),
                     if (apiKeyProvider.error != null) ...[
@@ -250,9 +331,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    ...AppVersion.versionHistory.map((version) => _buildVersionHistoryItem(
-                      '${version['version']} (${version['date']}): ${version['changes']}'
-                    )),
+                    ...AppVersion.versionHistory.map(
+                      (version) => _buildVersionHistoryItem(
+                        '${version['version']} (${version['date']}): ${version['changes']}',
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -276,9 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );

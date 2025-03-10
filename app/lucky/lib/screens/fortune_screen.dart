@@ -85,6 +85,14 @@ class _FortuneScreenState extends State<FortuneScreen> {
         title: const Text('今日运势'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
+        actions: [
+          // Add refresh button
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: fortuneProvider.isLoading ? null : _generateFortune,
+            tooltip: '刷新运势',
+          ),
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -105,7 +113,9 @@ class _FortuneScreenState extends State<FortuneScreen> {
   }
   
   Widget _buildFortuneContent(BuildContext context, FortuneProvider fortuneProvider) {
-    return SingleChildScrollView(
+    return Stack(
+      children: [
+        SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,7 +333,7 @@ class _FortuneScreenState extends State<FortuneScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '敲击木鱼可以增加功德值，功德值越高，运势越好。每天可敲击108次。',
+                    '每天刷新运势可以获得新的运势预测。功德值越高，运势越好。',
                     style: TextStyle(fontSize: 14),
                   ),
                 ],
@@ -344,6 +354,16 @@ class _FortuneScreenState extends State<FortuneScreen> {
           ),
         ],
       ),
+        ),
+        // Show loading indicator when refreshing
+        if (fortuneProvider.isLoading)
+          Container(
+            color: Colors.black.withOpacity(0.3),
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+      ],
     );
   }
   
