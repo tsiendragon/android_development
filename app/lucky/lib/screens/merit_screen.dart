@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:lucky/models/merit_achievement_model.dart';
 
 class MeritScreen extends StatefulWidget {
   const MeritScreen({super.key});
@@ -27,6 +28,7 @@ class _MeritScreenState extends State<MeritScreen>
   int _selectedQuestionIndex = 0;
   final TextEditingController _answerController = TextEditingController();
   bool _isSubmitting = false;
+  MeritAchievement? _newAchievement;
 
   // 添加+1动画控制器
   late AnimationController _plusOneController;
@@ -72,7 +74,7 @@ class _MeritScreenState extends State<MeritScreen>
       }
     });
 
-    // 生成反思问题（这是同步操作，可以保留）
+    // 生成反思问题
     _generateReflectionQuestions();
 
     // 将异步操作移到addPostFrameCallback中
@@ -120,7 +122,11 @@ class _MeritScreenState extends State<MeritScreen>
     final points = random.nextInt(37); // 0-36
 
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    await userProvider.updateMeritPoints(points);
+    await userProvider.updateMeritPoints(
+      points,
+      type: 'random',
+      description: '随机功德',
+    );
 
     final prefs = await SharedPreferences.getInstance();
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -139,7 +145,6 @@ class _MeritScreenState extends State<MeritScreen>
   }
 
   void _generateReflectionQuestions() {
-    // 这里可以调用API生成问题，但为了简化，我们使用预设问题
     _reflectionQuestions = [
       {'question': '今天你做了哪些善事？', 'category': '善行'},
       {'question': '今天你的学习或工作中有什么收获？', 'category': '学习工作'},
@@ -148,7 +153,6 @@ class _MeritScreenState extends State<MeritScreen>
       {'question': '今天你有什么需要改进的地方？', 'category': '自省'},
     ];
 
-    // 随机选择一个问题
     _selectedQuestionIndex = Random().nextInt(_reflectionQuestions.length);
   }
 
@@ -164,61 +168,27 @@ class _MeritScreenState extends State<MeritScreen>
       _isSubmitting = true;
     });
 
-    // 根据回答长度和质量计算功德值（简化版）
     final answerLength = _answerController.text.trim().length;
     int meritPoints = min(36, max(1, answerLength ~/ 10));
 
-    // 保存回答到本地
-    await _saveReflection(
-      _reflectionQuestions[_selectedQuestionIndex]['question'],
-      _reflectionQuestions[_selectedQuestionIndex]['category'],
-      _answerController.text.trim(),
-      meritPoints,
-    );
-
-    // 更新功德值
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    await userProvider.updateMeritPoints(meritPoints);
+    await userProvider.updateMeritPoints(
+      meritPoints,
+      type: 'reflection',
+      description: _reflectionQuestions[_selectedQuestionIndex]['question'],
+      category: _reflectionQuestions[_selectedQuestionIndex]['category'],
+    );
 
     setState(() {
       _isSubmitting = false;
     });
 
-    // 清空输入框并生成新问题
     _answerController.clear();
     _generateReflectionQuestions();
 
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('感谢您的自省，获得功德 +$meritPoints')));
-  }
-
-  Future<void> _saveReflection(
-    String question,
-    String category,
-    String answer,
-    int meritPoints,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-    // 获取已有的反思记录
-    final reflectionsJson = prefs.getString('reflections') ?? '[]';
-    final reflections = List<Map<String, dynamic>>.from(
-      jsonDecode(reflectionsJson),
-    );
-
-    // 添加新记录
-    reflections.add({
-      'date': today,
-      'question': question,
-      'category': category,
-      'answer': answer,
-      'meritPoints': meritPoints,
-    });
-
-    // 保存更新后的记录
-    await prefs.setString('reflections', jsonEncode(reflections));
   }
 
   Future<void> _onWoodenFishTap() async {
@@ -235,7 +205,11 @@ class _MeritScreenState extends State<MeritScreen>
 
     if (!mounted) return;
 
-    await userProvider.updateMeritPoints(AppConstants.meritPointsPerTap);
+    await userProvider.updateMeritPoints(
+      AppConstants.meritPointsPerTap,
+      type: 'wooden_fish',
+      description: '敲击木鱼',
+    );
 
     if (!mounted) return;
 
@@ -245,11 +219,52 @@ class _MeritScreenState extends State<MeritScreen>
       _showPlusOne = true;
     });
 
-    // 启动+1动画
     _plusOneController.forward();
-
-    // 保存敲击次数
     _saveTapCount();
+  }
+
+  void _showAchievementDetails(MeritAchievement achievement) {
+    setState(() {
+      _newAchievement = achievement;
+    });
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Text(achievement.icon, style: const TextStyle(fontSize: 32)),
+                const SizedBox(width: 16),
+                Text(achievement.title),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(achievement.description),
+                if (achievement.unlockedAt != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    '解锁时间: ${DateFormat('yyyy-MM-dd HH:mm').format(achievement.unlockedAt!)}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _newAchievement = null;
+                  });
+                  Navigator.of(context).pop();
+                },
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+    );
   }
 
   @override
@@ -579,6 +594,164 @@ class _MeritScreenState extends State<MeritScreen>
                                   )
                                   : const Text('提交回答'),
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 功德历史
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '功德历史',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '查看最近的功德记录',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 200,
+                        child: ListView.builder(
+                          itemCount: userProvider.meritHistory.length,
+                          itemBuilder: (context, index) {
+                            final history = userProvider.meritHistory[index];
+                            return ListTile(
+                              leading: Icon(
+                                history.type == 'wooden_fish'
+                                    ? Icons.touch_app
+                                    : history.type == 'random'
+                                    ? Icons.auto_awesome
+                                    : Icons.edit_note,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              title: Text(
+                                history.type == 'wooden_fish'
+                                    ? '敲击木鱼'
+                                    : history.type == 'random'
+                                    ? '随机功德'
+                                    : '自省功德',
+                              ),
+                              subtitle: Text(
+                                DateFormat(
+                                  'yyyy-MM-dd HH:mm',
+                                ).format(history.date),
+                              ),
+                              trailing: Text(
+                                '+${history.points}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // 功德成就
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '功德成就',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '完成成就获得更多功德',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 1.5,
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                            ),
+                        itemCount: userProvider.achievements.length,
+                        itemBuilder: (context, index) {
+                          final achievement = userProvider.achievements[index];
+                          return GestureDetector(
+                            onTap: () {
+                              if (achievement.isUnlocked) {
+                                _showAchievementDetails(achievement);
+                              }
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color:
+                                    achievement.isUnlocked
+                                        ? Theme.of(
+                                          context,
+                                        ).colorScheme.primary.withOpacity(0.1)
+                                        : Colors.grey[100],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color:
+                                      achievement.isUnlocked
+                                          ? Theme.of(
+                                            context,
+                                          ).colorScheme.primary
+                                          : Colors.grey[300]!,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    achievement.icon,
+                                    style: const TextStyle(fontSize: 32),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    achievement.title,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          achievement.isUnlocked
+                                              ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                              : Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),

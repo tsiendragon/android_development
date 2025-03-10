@@ -5,16 +5,19 @@ class Fortune {
   final String fortuneText;
   final bool isFavorite;
   final DateTime createdAt;
-  
+
   // New fields for version 1.1 - ratings for different aspects (0-5 stars)
-  final int loveRating;     // 爱情运势评分
-  final int careerRating;   // 事业运势评分
-  final int healthRating;   // 健康运势评分
-  final int wealthRating;   // 财运评分
-  
+  final int loveRating; // 爱情运势评分
+  final int careerRating; // 事业运势评分
+  final int healthRating; // 健康运势评分
+  final int wealthRating; // 财运评分
+
   // New fields for version 1.2 - things to do and avoid to improve fortune
-  final List<String> thingsToDo;      // 宜做事项
-  final List<String> thingsToAvoid;   // 忌做事项
+  final List<String> thingsToDo; // 宜做事项
+  final List<String> thingsToAvoid; // 忌做事项
+
+  // New fields for version 1.3 - fortune curve data
+  final List<FortunePoint> fortuneCurve; // 运势曲线数据点
 
   Fortune({
     required this.id,
@@ -29,6 +32,7 @@ class Fortune {
     this.wealthRating = 0,
     this.thingsToDo = const [],
     this.thingsToAvoid = const [],
+    this.fortuneCurve = const [],
   });
 
   factory Fortune.fromJson(Map<String, dynamic> json) {
@@ -43,12 +47,20 @@ class Fortune {
       careerRating: json['careerRating'] ?? 0,
       healthRating: json['healthRating'] ?? 0,
       wealthRating: json['wealthRating'] ?? 0,
-      thingsToDo: json['thingsToDo'] != null 
-          ? List<String>.from(json['thingsToDo']) 
-          : const [],
-      thingsToAvoid: json['thingsToAvoid'] != null 
-          ? List<String>.from(json['thingsToAvoid']) 
-          : const [],
+      thingsToDo:
+          json['thingsToDo'] != null
+              ? List<String>.from(json['thingsToDo'])
+              : const [],
+      thingsToAvoid:
+          json['thingsToAvoid'] != null
+              ? List<String>.from(json['thingsToAvoid'])
+              : const [],
+      fortuneCurve:
+          json['fortuneCurve'] != null
+              ? (json['fortuneCurve'] as List)
+                  .map((point) => FortunePoint.fromJson(point))
+                  .toList()
+              : const [],
     );
   }
 
@@ -66,6 +78,7 @@ class Fortune {
       'wealthRating': wealthRating,
       'thingsToDo': thingsToDo,
       'thingsToAvoid': thingsToAvoid,
+      'fortuneCurve': fortuneCurve.map((point) => point.toJson()).toList(),
     };
   }
 
@@ -80,6 +93,9 @@ class Fortune {
     int? careerRating,
     int? healthRating,
     int? wealthRating,
+    List<String>? thingsToDo,
+    List<String>? thingsToAvoid,
+    List<FortunePoint>? fortuneCurve,
   }) {
     return Fortune(
       id: id ?? this.id,
@@ -92,6 +108,24 @@ class Fortune {
       careerRating: careerRating ?? this.careerRating,
       healthRating: healthRating ?? this.healthRating,
       wealthRating: wealthRating ?? this.wealthRating,
+      thingsToDo: thingsToDo ?? this.thingsToDo,
+      thingsToAvoid: thingsToAvoid ?? this.thingsToAvoid,
+      fortuneCurve: fortuneCurve ?? this.fortuneCurve,
     );
+  }
+}
+
+class FortunePoint {
+  final int hour; // 时辰（0-23）
+  final double value; // 运势值（0-5）
+
+  FortunePoint({required this.hour, required this.value});
+
+  factory FortunePoint.fromJson(Map<String, dynamic> json) {
+    return FortunePoint(hour: json['hour'], value: json['value'].toDouble());
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'hour': hour, 'value': value};
   }
 }

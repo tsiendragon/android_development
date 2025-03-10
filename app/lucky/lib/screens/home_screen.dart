@@ -6,9 +6,9 @@ import 'package:lucky/providers/user_provider.dart';
 import 'package:lucky/providers/fortune_provider.dart';
 import 'package:lucky/screens/fortune_screen.dart';
 import 'package:lucky/screens/login_screen.dart';
-import 'package:lucky/screens/settings_screen.dart';
 import 'package:lucky/utils/constants.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -155,7 +155,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // Update merit points - no context needed here since we already have userProvider
     final newMeritPoints =
         (userProvider.user?.meritPoints ?? 0) + AppConstants.meritPointsPerTap;
-    await userProvider.updateMeritPoints(AppConstants.meritPointsPerTap);
+    await userProvider.updateMeritPoints(
+      AppConstants.meritPointsPerTap,
+      type: 'wooden_fish',
+    );
 
     // Check if widget is still mounted before proceeding
     if (!mounted) return;
@@ -196,12 +199,84 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _navigateToFortuneScreen() {
-    // 不再需要导航到运势页面，因为可以通过底部导航栏访问
-    // 可以在这里添加一些其他逻辑，比如显示一个提示
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('请点击底部导航栏的"运势"查看详情')));
+  Widget _buildFortuneCurve() {
+    final fortuneProvider = Provider.of<FortuneProvider>(context);
+    final fortune = fortuneProvider.todayFortune;
+
+    if (fortune == null || fortune.fortuneCurve.isEmpty) {
+      return const SizedBox(height: 120);
+    }
+
+    // Convert fortune points to FlSpot list
+    final spots =
+        fortune.fortuneCurve
+            .map((point) => FlSpot(point.hour.toDouble(), point.value))
+            .toList();
+
+    return Container(
+      height: 120,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: 5,
+          gridData: FlGridData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 6,
+                getTitlesWidget: (value, meta) {
+                  const style = TextStyle(color: Colors.grey, fontSize: 12);
+                  Widget text;
+                  switch (value.toInt()) {
+                    case 0:
+                      text = const Text('子时', style: style);
+                      break;
+                    case 6:
+                      text = const Text('午时', style: style);
+                      break;
+                    case 12:
+                      text = const Text('酉时', style: style);
+                      break;
+                    default:
+                      text = const Text('');
+                      break;
+                  }
+                  return SideTitleWidget(axisSide: meta.axisSide, child: text);
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: Theme.of(context).colorScheme.primary,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                    Theme.of(context).colorScheme.primary.withOpacity(0.0),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -300,11 +375,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   margin: const EdgeInsets.symmetric(horizontal: 16.0),
                   padding: const EdgeInsets.all(16.0),
                   decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(230), // 0.9 * 255 = 230
+                    color: Colors.white.withAlpha(230),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withAlpha(26), // 0.1 * 255 = 26
+                        color: Colors.black.withAlpha(26),
                         blurRadius: 10,
                         offset: const Offset(0, 5),
                       ),
@@ -421,12 +496,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-
+                const SizedBox(height: 20),
                 // Section title
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16.0,
-                    vertical: 16.0,
+                    vertical: 8.0,
                   ),
                   child: Text(
                     '今日运势',
@@ -436,108 +511,95 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                // Today's fortune card
-                Container(
-                  margin: const EdgeInsets.all(16.0),
-                  child: Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: InkWell(
-                      onTap: _navigateToFortuneScreen,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(16.0),
-                        // Make the card taller when fortune is available to accommodate the ratings
-                        constraints: BoxConstraints(
-                          minHeight:
-                              fortuneProvider.todayFortune != null ? 250 : 150,
+                // Fortune section
+                if (fortuneProvider.todayFortune != null)
+                  GestureDetector(
+                    onTap: () {
+                      // Navigate to fortune screen
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const FortuneScreen(),
                         ),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_awesome,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '今日运势',
-                                  style:
-                                      Theme.of(
-                                        context,
-                                      ).textTheme.headlineMedium,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            fortuneProvider.todayFortune != null
-                                ? Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '您今日的运势已生成，点击查看详情',
-                                      style:
-                                          Theme.of(context).textTheme.bodyLarge,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    // Love fortune rating
-                                    _buildFortuneRatingRow(
-                                      context,
-                                      '爱情运势',
-                                      fortuneProvider.todayFortune!.loveRating,
-                                      Colors.pink,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Career fortune rating
-                                    _buildFortuneRatingRow(
-                                      context,
-                                      '事业运势',
-                                      fortuneProvider
-                                          .todayFortune!
-                                          .careerRating,
-                                      Colors.blue,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Health fortune rating
-                                    _buildFortuneRatingRow(
-                                      context,
-                                      '健康运势',
-                                      fortuneProvider
-                                          .todayFortune!
-                                          .healthRating,
-                                      Colors.green,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    // Wealth fortune rating
-                                    _buildFortuneRatingRow(
-                                      context,
-                                      '财运',
-                                      fortuneProvider
-                                          .todayFortune!
-                                          .wealthRating,
-                                      Colors.amber,
-                                    ),
-                                  ],
-                                )
-                                : Text(
-                                  '点击生成今日运势',
-                                  style: Theme.of(context).textTheme.bodyLarge,
-                                ),
-                            const SizedBox(height: 8),
-                            Icon(
-                              Icons.arrow_forward,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ],
-                        ),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(230),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(26),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '今日运势',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Fortune summary
+                          Text(
+                            fortuneProvider.todayFortune!.fortuneText.split(
+                              '\n',
+                            )[0],
+                            style: const TextStyle(fontSize: 16, height: 1.5),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 12),
+                          // Fortune curve
+                          _buildFortuneCurve(),
+                          const SizedBox(height: 12),
+                          // Fortune ratings
+                          _buildFortuneRatingRow(
+                            context,
+                            '爱情',
+                            fortuneProvider.todayFortune!.loveRating,
+                            const Color(0xFFE57373),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildFortuneRatingRow(
+                            context,
+                            '事业',
+                            fortuneProvider.todayFortune!.careerRating,
+                            const Color(0xFF81C784),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildFortuneRatingRow(
+                            context,
+                            '健康',
+                            fortuneProvider.todayFortune!.healthRating,
+                            const Color(0xFF64B5F6),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildFortuneRatingRow(
+                            context,
+                            '财运',
+                            fortuneProvider.todayFortune!.wealthRating,
+                            const Color(0xFFFFB74D),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

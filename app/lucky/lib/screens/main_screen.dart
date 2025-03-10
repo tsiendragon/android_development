@@ -3,6 +3,7 @@ import 'package:lucky/screens/home_screen.dart';
 import 'package:lucky/screens/fortune_detail_screen.dart';
 import 'package:lucky/screens/merit_screen.dart';
 import 'package:lucky/screens/settings_screen.dart';
+import 'package:lucky/screens/profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -18,6 +19,7 @@ class _MainScreenState extends State<MainScreen> {
     const HomeScreen(),
     const FortuneDetailScreen(),
     const MeritScreen(),
+    const ProfileScreen(),
     const SettingsScreen(),
   ];
 
@@ -43,6 +45,7 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.volunteer_activism),
             label: '积德',
           ),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: '我的'),
           BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
         ],
       ),

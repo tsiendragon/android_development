@@ -6,6 +6,10 @@ import 'package:intl/intl.dart';
 import 'package:lucky/providers/user_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:lucky/services/fortune_service.dart';
+import 'package:lucky/models/user_question_model.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'dart:math';
 
 class FortuneDetailScreen extends StatefulWidget {
   const FortuneDetailScreen({super.key});
@@ -19,11 +23,19 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
   late TabController _tabController;
   final TextEditingController _answerController = TextEditingController();
   bool _isSubmitting = false;
+  String? _currentQuestion;
+  String? _currentCategory;
+  late final Map<String, Map<String, List<String>>> _suggestions;
+  bool _isLoading = false;
+  final Map<String, List<FlSpot>> _fortuneData = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
+    _suggestions = {};
+    _loadAllSuggestions();
+    _generateFortuneData();
   }
 
   @override
@@ -31,6 +43,103 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
     _tabController.dispose();
     _answerController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAllSuggestions() async {
+    setState(() => _isLoading = true);
+    try {
+      final categories = ['love', 'career', 'health', 'wealth'];
+      for (final category in categories) {
+        final suggestions = await FortuneService.generateSuggestions(category);
+        setState(() {
+          _suggestions[category] = suggestions;
+        });
+      }
+      setState(() => _isLoading = false);
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('加载建议失败，请重试')));
+      }
+    }
+  }
+
+  void _generateFortuneData() {
+    final random = Random(DateTime.now().day);
+
+    for (final category in ['love', 'career', 'health', 'wealth']) {
+      final List<FlSpot> spots = [];
+
+      for (int i = 0; i < 30; i++) {
+        final baseValue = 3.0;
+        final dayFactor = sin(i * 0.2) * 0.8;
+        final randomFactor = random.nextDouble() * 0.4 - 0.2;
+        final value = (baseValue + dayFactor + randomFactor).clamp(1.0, 5.0);
+        spots.add(FlSpot(i.toDouble(), double.parse(value.toStringAsFixed(1))));
+      }
+
+      final lastValue = spots.last.y;
+      for (int i = 0; i < 5; i++) {
+        final prediction = (lastValue + (random.nextDouble() * 0.4 - 0.2))
+            .clamp(1.0, 5.0);
+        spots.add(
+          FlSpot(
+            (30 + i).toDouble(),
+            double.parse(prediction.toStringAsFixed(1)),
+          ),
+        );
+      }
+
+      _fortuneData[category] = spots;
+    }
+  }
+
+  Future<void> _generateQuestion(String category) async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _currentCategory = category;
+    });
+
+    try {
+      final question = await FortuneService.generateRandomQuestion(category);
+      if (mounted) {
+        setState(() {
+          _currentQuestion = question;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('生成问题失败: ${e.toString()}')));
+      }
+    }
+  }
+
+  Future<void> _submitAnswer() async {
+    if (_currentQuestion == null || _currentCategory == null) return;
+
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final question = UserQuestion(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      question: _currentQuestion!,
+      answer: _answerController.text,
+      category: _currentCategory!,
+      createdAt: DateTime.now(),
+    );
+
+    await userProvider.addQuestion(question);
+    _answerController.clear();
+    setState(() {
+      _currentQuestion = null;
+      _currentCategory = null;
+    });
   }
 
   // 保存用户对运势的反馈
@@ -103,32 +212,6 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
           size: 24,
         );
       }),
-    );
-  }
-
-  // 构建运势详情卡片
-  Widget _buildFortuneCard(String title, String content, {Color? color}) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color ?? Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(content, style: const TextStyle(fontSize: 16)),
-          ],
-        ),
-      ),
     );
   }
 
@@ -258,6 +341,44 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
+          // 运势曲线
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '运势趋势',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCombinedFortuneCurve(),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildLegendItem('爱情', const Color(0xFFE57373)),
+                      _buildLegendItem('事业', const Color(0xFF81C784)),
+                      _buildLegendItem('健康', const Color(0xFF64B5F6)),
+                      _buildLegendItem('财运', const Color(0xFFFFB74D)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // 四个方面的运势评分
           Card(
             elevation: 2,
@@ -376,108 +497,61 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
-          // 宜做事项
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '今日宜做',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...fortune.thingsToDo.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item,
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        ],
+          // 运势建议
+          _buildSuggestionsCard('love', '爱情运势'),
+          _buildSuggestionsCard('career', '事业运势'),
+          _buildSuggestionsCard('health', '健康运势'),
+          _buildSuggestionsCard('wealth', '财运运势'),
+
+          // 随机问题
+          if (_currentQuestion != null)
+            Card(
+              margin: const EdgeInsets.all(8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('补充信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    Text(_currentQuestion!),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _answerController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入你的回答',
+                        border: OutlineInputBorder(),
                       ),
+                      maxLines: 3,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _submitAnswer,
+                      child: const Text('提交'),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 20),
-
-          // 忌做事项
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '今日忌做',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...fortune.thingsToAvoid.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.cancel, color: Colors.red, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item,
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          // 生成问题按钮
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildQuestionButton('love', '爱情'),
+                _buildQuestionButton('career', '事业'),
+                _buildQuestionButton('health', '健康'),
+                _buildQuestionButton('wealth', '财运'),
+              ],
             ),
           ),
-
-          const SizedBox(height: 20),
-
-          // 反馈问题
-          _buildFeedbackCard('综合', '您对今日的运势预测有什么看法？'),
         ],
       ),
     );
   }
 
-  // 构建爱情运势页面
   Widget _buildLoveTab(Fortune fortune) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -525,39 +599,86 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
-          // 爱情运势详情
-          _buildFortuneCard(
-            '爱情运势详解',
-            '今日爱情运势为${fortune.loveRating}星。' +
-                (fortune.fortuneText.contains('爱情')
-                    ? fortune.fortuneText.split('爱情')[1].split('事业')[0]
-                    : '单身的朋友可能会有新的邂逅，已有伴侣的朋友可以增进感情交流。'),
-            color: Colors.pink,
+          // 爱情运势曲线
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '爱情运势趋势',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.pink,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCombinedFortuneCurve(singleCategory: 'love'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [_buildLegendItem('爱情', const Color(0xFFE57373))],
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 20),
 
           // 爱情运势建议
-          _buildFortuneCard(
-            '爱情运势建议',
-            fortune.loveRating >= 4
-                ? '今天是增进感情的好时机，可以安排一次约会或给对方一个惊喜。'
-                : (fortune.loveRating >= 3
-                    ? '今天爱情运势一般，保持平常心，避免过度敏感。'
-                    : '今天爱情运势较低，建议避免争执，给彼此一些空间。'),
-            color: Colors.pink,
+          _buildSuggestionsCard('love', '爱情运势建议'),
+
+          // 随机问题
+          if (_currentQuestion != null && _currentCategory == 'love')
+            Card(
+              margin: const EdgeInsets.all(8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('补充信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    Text(_currentQuestion!),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _answerController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入你的回答',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _submitAnswer,
+                      child: const Text('提交'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 生成问题按钮
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [_buildQuestionButton('love', '生成爱情问题')],
+            ),
           ),
-
-          const SizedBox(height: 20),
-
-          // 反馈问题
-          _buildFeedbackCard('爱情', '您最近的感情生活如何？有什么想要分享的经历吗？'),
         ],
       ),
     );
   }
 
-  // 构建事业运势页面
   Widget _buildCareerTab(Fortune fortune) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -605,39 +726,86 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
-          // 事业运势详情
-          _buildFortuneCard(
-            '事业运势详解',
-            '今日事业运势为${fortune.careerRating}星。' +
-                (fortune.fortuneText.contains('事业')
-                    ? fortune.fortuneText.split('事业')[1].split('健康')[0]
-                    : '工作中可能会有新的机会，建议保持积极主动的态度。'),
-            color: Colors.blue,
+          // 事业运势曲线
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '事业运势趋势',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCombinedFortuneCurve(singleCategory: 'career'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [_buildLegendItem('事业', const Color(0xFF81C784))],
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 20),
 
           // 事业运势建议
-          _buildFortuneCard(
-            '事业运势建议',
-            fortune.careerRating >= 4
-                ? '今天是展示才能的好时机，可以主动承担重要任务，提出创新想法。'
-                : (fortune.careerRating >= 3
-                    ? '今天事业运势一般，专注于日常工作，避免冒险。'
-                    : '今天事业运势较低，建议低调行事，避免与同事或上级发生冲突。'),
-            color: Colors.blue,
+          _buildSuggestionsCard('career', '事业运势建议'),
+
+          // 随机问题
+          if (_currentQuestion != null && _currentCategory == 'career')
+            Card(
+              margin: const EdgeInsets.all(8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('补充信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    Text(_currentQuestion!),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _answerController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入你的回答',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _submitAnswer,
+                      child: const Text('提交'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 生成问题按钮
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [_buildQuestionButton('career', '生成事业问题')],
+            ),
           ),
-
-          const SizedBox(height: 20),
-
-          // 反馈问题
-          _buildFeedbackCard('事业', '您最近的工作或学习有什么进展？遇到了哪些挑战？'),
         ],
       ),
     );
   }
 
-  // 构建健康运势页面
   Widget _buildHealthTab(Fortune fortune) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -685,39 +853,86 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
-          // 健康运势详情
-          _buildFortuneCard(
-            '健康运势详解',
-            '今日健康运势为${fortune.healthRating}星。' +
-                (fortune.fortuneText.contains('健康')
-                    ? fortune.fortuneText.split('健康')[1].split('财运')[0]
-                    : '身体状况良好，但仍需注意作息规律，保持良好的生活习惯。'),
-            color: Colors.green,
+          // 健康运势曲线
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '健康运势趋势',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCombinedFortuneCurve(singleCategory: 'health'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [_buildLegendItem('健康', const Color(0xFF64B5F6))],
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 20),
 
           // 健康运势建议
-          _buildFortuneCard(
-            '健康运势建议',
-            fortune.healthRating >= 4
-                ? '今天身体状况良好，是进行体育锻炼的好时机，可以适当增加运动强度。'
-                : (fortune.healthRating >= 3
-                    ? '今天健康运势一般，保持规律作息，避免过度劳累。'
-                    : '今天健康运势较低，建议多休息，避免剧烈运动，注意饮食健康。'),
-            color: Colors.green,
+          _buildSuggestionsCard('health', '健康运势建议'),
+
+          // 随机问题
+          if (_currentQuestion != null && _currentCategory == 'health')
+            Card(
+              margin: const EdgeInsets.all(8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('补充信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    Text(_currentQuestion!),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _answerController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入你的回答',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _submitAnswer,
+                      child: const Text('提交'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 生成问题按钮
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [_buildQuestionButton('health', '生成健康问题')],
+            ),
           ),
-
-          const SizedBox(height: 20),
-
-          // 反馈问题
-          _buildFeedbackCard('健康', '您最近的身体状况如何？有什么健康方面的困扰吗？'),
         ],
       ),
     );
   }
 
-  // 构建财运页面
   Widget _buildWealthTab(Fortune fortune) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -765,42 +980,352 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
 
           const SizedBox(height: 20),
 
-          // 财运详情
-          _buildFortuneCard(
-            '财运详解',
-            '今日财运为${fortune.wealthRating}星。' +
-                (fortune.fortuneText.contains('财运')
-                    ? fortune.fortuneText.split('财运')[1].split('今日宜做')[0]
-                    : '财务状况稳定，可能会有意外收入，但也要避免冲动消费。'),
-            color: Colors.amber,
+          // 财运曲线
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '财运趋势',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildCombinedFortuneCurve(singleCategory: 'wealth'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [_buildLegendItem('财运', const Color(0xFFFFB74D))],
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 20),
 
           // 财运建议
-          _buildFortuneCard(
-            '财运建议',
-            fortune.wealthRating >= 4
-                ? '今天财运良好，适合进行投资理财，也可能有意外收获。'
-                : (fortune.wealthRating >= 3
-                    ? '今天财运一般，量入为出，避免不必要的开支。'
-                    : '今天财运较低，建议谨慎消费，避免大额支出和投资。'),
-            color: Colors.amber,
+          _buildSuggestionsCard('wealth', '财运建议'),
+
+          // 随机问题
+          if (_currentQuestion != null && _currentCategory == 'wealth')
+            Card(
+              margin: const EdgeInsets.all(8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('补充信息', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+                    Text(_currentQuestion!),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _answerController,
+                      decoration: const InputDecoration(
+                        hintText: '请输入你的回答',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _submitAnswer,
+                      child: const Text('提交'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 生成问题按钮
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [_buildQuestionButton('wealth', '生成财运问题')],
+            ),
           ),
-
-          const SizedBox(height: 20),
-
-          // 反馈问题
-          _buildFeedbackCard('财运', '您最近的财务状况如何？有什么理财计划或困扰吗？'),
         ],
       ),
     );
   }
 
+  Widget _buildCombinedFortuneCurve({String? singleCategory}) {
+    List<LineChartBarData> getVisibleLines() {
+      if (singleCategory == null) {
+        return [
+          LineChartBarData(
+            spots: _fortuneData['love'] ?? [],
+            isCurved: true,
+            curveSmoothness: 0.35,
+            color: const Color(0xFFE57373),
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          LineChartBarData(
+            spots: _fortuneData['career'] ?? [],
+            isCurved: true,
+            curveSmoothness: 0.35,
+            color: const Color(0xFF81C784),
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          LineChartBarData(
+            spots: _fortuneData['health'] ?? [],
+            isCurved: true,
+            curveSmoothness: 0.35,
+            color: const Color(0xFF64B5F6),
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          LineChartBarData(
+            spots: _fortuneData['wealth'] ?? [],
+            isCurved: true,
+            curveSmoothness: 0.35,
+            color: const Color(0xFFFFB74D),
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+        ];
+      }
+
+      return [
+        LineChartBarData(
+          spots: _fortuneData[singleCategory] ?? [],
+          isCurved: true,
+          curveSmoothness: 0.35,
+          color: _getCategoryColor(singleCategory),
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: FlDotData(show: false),
+          belowBarData: BarAreaData(show: false),
+        ),
+      ];
+    }
+
+    return Container(
+      height: 300,
+      padding: const EdgeInsets.all(16),
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: 5,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 1,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[300]!,
+                strokeWidth: 0.5,
+                dashArray: [5, 5],
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 5,
+                getTitlesWidget: (value, meta) {
+                  final date = DateTime.now().subtract(
+                    Duration(days: 30 - value.toInt()),
+                  );
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      DateFormat('MM/dd').format(date),
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: getVisibleLines(),
+          lineTouchData: LineTouchData(
+            enabled: true,
+            touchTooltipData: LineTouchTooltipData(
+              tooltipBgColor: Colors.black.withOpacity(0.8),
+              tooltipRoundedRadius: 8,
+              getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                return touchedSpots.map((LineBarSpot touchedSpot) {
+                  final date = DateTime.now().subtract(
+                    Duration(days: 30 - touchedSpot.x.toInt()),
+                  );
+                  final dateStr = DateFormat('MM/dd').format(date);
+                  final valueStr = touchedSpot.y.toStringAsFixed(1);
+
+                  return LineTooltipItem(
+                    '$dateStr\n$valueStr',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+            getTouchedSpotIndicator: (
+              LineChartBarData barData,
+              List<int> spotIndexes,
+            ) {
+              return spotIndexes.map((spotIndex) {
+                return TouchedSpotIndicatorData(
+                  FlLine(color: Colors.grey, strokeWidth: 1, dashArray: [5, 5]),
+                  FlDotData(
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 4,
+                        color: barData.color ?? Colors.grey,
+                        strokeWidth: 2,
+                        strokeColor: Colors.white,
+                      );
+                    },
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionsCard(String category, String title) {
+    final suggestions = _suggestions[category] ?? {};
+    if (suggestions.isEmpty) return const SizedBox.shrink();
+
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            _buildSuggestionSection('宜', suggestions['宜'] ?? []),
+            const SizedBox(height: 16),
+            _buildSuggestionSection('忌', suggestions['忌'] ?? []),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionSection(String title, List<String> suggestions) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: title == '宜' ? Colors.green : Colors.red,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...suggestions.map(
+          (suggestion) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  title == '宜' ? Icons.check_circle : Icons.cancel,
+                  color: title == '宜' ? Colors.green : Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(suggestion)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuestionButton(String category, String label) {
+    final bool isLoading = _isLoading && _currentCategory == category;
+
+    return ElevatedButton(
+      onPressed: _isLoading ? null : () => _generateQuestion(category),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _getCategoryColor(category),
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.grey[400],
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      child:
+          isLoading
+              ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+              : Text(label),
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'love':
+        return const Color(0xFFE57373);
+      case 'career':
+        return const Color(0xFF81C784);
+      case 'health':
+        return const Color(0xFF64B5F6);
+      case 'wealth':
+        return const Color(0xFFFFB74D);
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final fortuneProvider = Provider.of<FortuneProvider>(context);
-    final userProvider = Provider.of<UserProvider>(context);
 
     if (fortuneProvider.todayFortune == null) {
       return Scaffold(
@@ -814,7 +1339,6 @@ class _FortuneDetailScreenState extends State<FortuneDetailScreen>
     }
 
     final fortune = fortuneProvider.todayFortune!;
-    final user = userProvider.user;
 
     return Scaffold(
       appBar: AppBar(

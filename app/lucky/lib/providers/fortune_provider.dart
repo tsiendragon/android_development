@@ -124,6 +124,10 @@ class FortuneProvider extends ChangeNotifier {
         wealthRating: fortuneResult['wealthRating'],
         thingsToDo: List<String>.from(fortuneResult['thingsToDo'] ?? []),
         thingsToAvoid: List<String>.from(fortuneResult['thingsToAvoid'] ?? []),
+        fortuneCurve:
+            (fortuneResult['fortuneCurve'] as List)
+                .map((point) => FortunePoint.fromJson(point))
+                .toList(),
       );
 
       // Save to preferences
@@ -266,6 +270,15 @@ class FortuneProvider extends ChangeNotifier {
             print('Parsed thingsToAvoid: $thingsToAvoid');
           }
 
+          // Generate fortune curve data
+          final fortuneCurve = _generateFortuneCurve(
+            fortuneData['loveRating'] ?? 3,
+            fortuneData['careerRating'] ?? 3,
+            fortuneData['healthRating'] ?? 3,
+            fortuneData['wealthRating'] ?? 3,
+            meritPoints,
+          );
+
           return {
             'text': fortuneData['text'] ?? '无法获取运势信息',
             'loveRating': _ensureRatingRange(fortuneData['loveRating']),
@@ -274,6 +287,8 @@ class FortuneProvider extends ChangeNotifier {
             'wealthRating': _ensureRatingRange(fortuneData['wealthRating']),
             'thingsToDo': thingsToDo,
             'thingsToAvoid': thingsToAvoid,
+            'fortuneCurve':
+                fortuneCurve.map((point) => point.toJson()).toList(),
           };
         } catch (e) {
           if (kDebugMode) {
@@ -324,87 +339,6 @@ class FortuneProvider extends ChangeNotifier {
     return max(1, min(5, ratingInt));
   }
 
-  // Extract rating from text using regex
-  int? _extractRating(String text, String aspect) {
-    // Try different patterns to extract rating
-    final patterns = [
-      '$aspect.*?(\\d)[^\\d]*分',
-      '$aspect.*?评分.*?(\\d)',
-      '$aspect.*?(\\d)\\s*星',
-      '$aspect.*?(\\d)\\s*/\\s*5',
-    ];
-
-    for (final pattern in patterns) {
-      final regex = RegExp(pattern);
-      final match = regex.firstMatch(text);
-      if (match != null && match.groupCount >= 1) {
-        return int.tryParse(match.group(1)!);
-      }
-    }
-
-    // If no match found, look for any digit near the aspect name
-    final nearDigitRegex = RegExp('$aspect[^\\d]{0,30}(\\d)');
-    final nearMatch = nearDigitRegex.firstMatch(text);
-    if (nearMatch != null && nearMatch.groupCount >= 1) {
-      return int.tryParse(nearMatch.group(1)!);
-    }
-
-    return null;
-  }
-
-  // Extract list items from text
-  List<String>? _extractListItems(String text, String keyword) {
-    // Try to find sections with the keyword (宜/忌)
-    final sectionRegex = RegExp('$keyword[^\\n]*\\n((?:[^\\n]+\\n)+)');
-    final sectionMatch = sectionRegex.firstMatch(text);
-
-    if (sectionMatch != null && sectionMatch.groupCount >= 1) {
-      final sectionText = sectionMatch.group(1)!;
-
-      // Extract bullet points or numbered items
-      final items = <String>[];
-
-      // Try different item patterns
-      final bulletRegex = RegExp(r'(?:•|\*|-|\d+\.|\(\d+\))\s*([^\n]+)');
-
-      final bulletMatches = bulletRegex.allMatches(sectionText);
-
-      if (bulletMatches.isNotEmpty) {
-        for (final match in bulletMatches) {
-          if (match.groupCount >= 1) {
-            final item = match.group(1)!.trim();
-            if (item.isNotEmpty) {
-              items.add(item);
-            }
-          }
-        }
-      } else {
-        // If no bullet points found, split by newlines
-        final lines = sectionText.split('\n');
-        for (final line in lines) {
-          final trimmed = line.trim();
-          if (trimmed.isNotEmpty) {
-            items.add(trimmed);
-          }
-        }
-      }
-
-      return items;
-    }
-
-    // If no section found, try to find individual items
-    final itemRegex = RegExp('$keyword[^：]*：([^\\n]+)');
-    final itemMatch = itemRegex.firstMatch(text);
-
-    if (itemMatch != null && itemMatch.groupCount >= 1) {
-      final itemsText = itemMatch.group(1)!;
-      final items = itemsText.split('、').map((e) => e.trim()).toList();
-      return items.where((item) => item.isNotEmpty).toList();
-    }
-
-    return null;
-  }
-
   // Helper method to get rating description based on rating value
   String _getRatingDescription(String aspect, int rating) {
     switch (rating) {
@@ -423,6 +357,57 @@ class FortuneProvider extends ChangeNotifier {
       default:
         return '$aspect运势一般';
     }
+  }
+
+  // Generate fortune curve data
+  List<FortunePoint> _generateFortuneCurve(
+    int loveRating,
+    int careerRating,
+    int healthRating,
+    int wealthRating,
+    int meritPoints,
+  ) {
+    final random = Random();
+    final baseValue = (meritPoints / 20).clamp(1.0, 5.0);
+    final points = <FortunePoint>[];
+
+    // Calculate average rating
+    final avgRating =
+        (loveRating + careerRating + healthRating + wealthRating) / 4.0;
+
+    // Generate 24 points for each hour
+    for (int hour = 0; hour < 24; hour++) {
+      // Calculate base fortune value based on hour and ratings
+      double value = baseValue * 0.7 + avgRating * 0.3;
+
+      // Add some randomness (reduced for smoother curve)
+      value += (random.nextDouble() - 0.5) * 0.2;
+
+      // Adjust based on hour (e.g., better fortune during certain hours)
+      if (hour >= 6 && hour <= 18) {
+        // Daytime hours (better fortune)
+        value += 0.3;
+      } else if (hour >= 22 || hour <= 4) {
+        // Night hours (slightly lower fortune)
+        value -= 0.3;
+      }
+
+      // Add small variations based on specific hours
+      if (hour == 6 || hour == 12 || hour == 18) {
+        // Peak hours
+        value += 0.2;
+      } else if (hour == 0 || hour == 3 || hour == 21) {
+        // Low hours
+        value -= 0.2;
+      }
+
+      // Ensure value stays within 0-5 range
+      value = value.clamp(0.0, 5.0);
+
+      points.add(FortunePoint(hour: hour, value: value));
+    }
+
+    return points;
   }
 
   // Generate mock fortune with ratings for all aspects
@@ -498,6 +483,15 @@ ${fortunes[fortuneIndex]}
 提升今日运势的建议：多行善事，积累功德，保持平和心态。
 ''';
 
+    // Generate fortune curve data
+    final fortuneCurve = _generateFortuneCurve(
+      loveRating,
+      careerRating,
+      healthRating,
+      wealthRating,
+      meritPoints,
+    );
+
     return {
       'text': fortuneText,
       'loveRating': loveRating,
@@ -506,6 +500,7 @@ ${fortunes[fortuneIndex]}
       'wealthRating': wealthRating,
       'thingsToDo': thingsToDo,
       'thingsToAvoid': thingsToAvoid,
+      'fortuneCurve': fortuneCurve.map((point) => point.toJson()).toList(),
     };
   }
 

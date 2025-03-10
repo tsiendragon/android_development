@@ -1,13 +1,13 @@
 /// Version information for the Lucky app
 class AppVersion {
   /// The current version of the app
-  static const String version = '1.3.0';
+  static const String version = '1.4.0';
 
   /// The build number of the app
-  static const int buildNumber = 4;
+  static const int buildNumber = 5;
 
   /// Release date of this version
-  static const String releaseDate = '2025-05-15';
+  static const String releaseDate = '2025-06-20';
 
   /// Version history with notable changes
   static const List<Map<String, String>> versionHistory = [
@@ -30,6 +30,11 @@ class AppVersion {
       'version': '1.3.0',
       'date': '2025-05-15',
       'changes': '新增敲击木鱼+1效果、优化主页运势展示、新增积德页面、增加历史信息记录功能',
+    },
+    {
+      'version': '1.4.0',
+      'date': '2025-06-20',
+      'changes': '优化UI布局：新增运势曲线展示、完善个人中心信息、优化积德页面交互、增加运势建议功能',
     },
   ];
 }
