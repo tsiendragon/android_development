@@ -8,6 +8,7 @@ import 'package:lucky/screens/fortune_screen.dart';
 import 'package:lucky/screens/login_screen.dart';
 import 'package:lucky/screens/settings_screen.dart';
 import 'package:lucky/utils/constants.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,7 +17,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  // Refresh controller
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
+  
+  // Last merit points value to track changes
+  int _lastMeritPoints = 0;
   // Widget to display star ratings for each fortune aspect
   Widget _buildFortuneRatingRow(BuildContext context, String label, int rating, Color color) {
     return Row(
@@ -41,6 +47,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
+  late AnimationController _meritPointsAnimController;
+  late Animation<double> _meritPointsAnimation;
+  bool _showMeritIncrease = false;
   int _tapCount = 0;
   bool _canTap = true;
   
@@ -59,7 +68,35 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
     );
     
+    // Initialize animation controller for merit points increase
+    _meritPointsAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    
+    _meritPointsAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _meritPointsAnimController,
+      curve: Curves.easeOutQuart,
+    ));
+    
+    _meritPointsAnimController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _showMeritIncrease = false;
+        });
+      }
+    });
+    
     _checkTodayFortune();
+    
+    // Set up listener for merit points changes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      _lastMeritPoints = userProvider.meritPoints;
+    });
   }
   
   Future<void> _checkTodayFortune() async {
@@ -70,25 +107,54 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
   
-  void _onWoodenFishTap() {
+  // Refresh fortune when pulled down
+  Future<void> _refreshFortune() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final fortuneProvider = Provider.of<FortuneProvider>(context, listen: false);
+    
+    if (userProvider.user != null) {
+      await fortuneProvider.generateTodayFortune(userProvider.user!);
+      return;
+    }
+  }
+  
+  Future<void> _onWoodenFishTap() async {
     if (!_canTap) return;
+    
+    // Get user provider before async gap
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     
     setState(() {
       _canTap = false;
     });
     
-    _animationController.forward().then((_) {
-      _animationController.reverse().then((_) {
-        setState(() {
-          _tapCount++;
-          _canTap = true;
-        });
-        
-        // Update merit points
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
-        userProvider.updateMeritPoints(AppConstants.meritPointsPerTap);
-      });
+    await _animationController.forward();
+    await _animationController.reverse();
+    
+    // Check if widget is still mounted before proceeding
+    if (!mounted) return;
+    
+    // Update merit points - no context needed here since we already have userProvider
+    final newMeritPoints = (userProvider.user?.meritPoints ?? 0) + AppConstants.meritPointsPerTap;
+    await userProvider.updateMeritPoints(AppConstants.meritPointsPerTap);
+    
+    // Check if widget is still mounted before proceeding
+    if (!mounted) return;
+    
+    // Show merit points increase animation
+    setState(() {
+      _showMeritIncrease = true;
+      _tapCount++;
+      _canTap = true;
     });
+    _meritPointsAnimController.reset();
+    _meritPointsAnimController.forward();
+    
+    // Check if merit points increased by 10 or more
+    if (newMeritPoints - _lastMeritPoints >= 10) {
+      _lastMeritPoints = newMeritPoints;
+      await _refreshFortune();
+    }
   }
   
   Future<void> _signOut() async {
@@ -122,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _animationController.dispose();
+    _meritPointsAnimController.dispose();
     super.dispose();
   }
 
@@ -142,8 +209,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ],
           ),
         ),
-        child: SafeArea(
-          child: Column(
+        child: RefreshIndicator(
+          key: _refreshIndicatorKey,
+          onRefresh: _refreshFortune,
+          color: Theme.of(context).colorScheme.primary,
+          backgroundColor: Colors.white,
+          child: SafeArea(
+            child: ListView(
             children: [
               // App bar
               Padding(
@@ -189,6 +261,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
               ),
               const SizedBox(height: 20),
+              // Section title
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Text(
+                  '功德修行',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
               // Merit points display
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -204,78 +287,204 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ],
                 ),
-                child: Column(
+                child: Row(
                   children: [
-                    const Text(
-                      '当前功德值',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '${userProvider.meritPoints}',
-                      style: const TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFE57373),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '今日已敲击: $_tapCount/${AppConstants.maxTapsPerDay}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 30),
-              // Wooden fish
-              Expanded(
-                child: Center(
-                  child: GestureDetector(
-                    onTap: _onWoodenFishTap,
-                    child: ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Container(
-                        width: 200,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF8D6E63),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withAlpha(77), // 0.3 * 255 = 77
-                              blurRadius: 15,
-                              offset: const Offset(0, 10),
+                    // Merit points info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '当前功德值',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '${userProvider.meritPoints}',
+                            style: const TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE57373),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '今日已敲击: $_tapCount/${AppConstants.maxTapsPerDay}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Vertical divider
+                    Container(
+                      height: 120,
+                      width: 1,
+                      color: Colors.grey.withAlpha(100),
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    // Wooden fish icon
+                    Column(
+                      children: [
+                        const Text(
+                          '木鱼',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        child: Center(
-                          child: Container(
-                            width: 150,
-                            height: 150,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFA1887F),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Center(
-                              child: Text(
-                                '木鱼',
-                                style: TextStyle(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: _onWoodenFishTap,
+                          child: ScaleTransition(
+                            scale: _scaleAnimation,
+                            child: Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF8D6E63),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withAlpha(50),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: SvgPicture.asset(
+                                  'assets/images/muyu.svg',
+                                  width: 40,
+                                  height: 40,
+                                  colorFilter: const ColorFilter.mode(
+                                    Colors.white,
+                                    BlendMode.srcIn,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Section title
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                child: Text(
+                  '今日运势',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 30),
+              // Wooden fish (large)
+              SizedBox(
+                height: 300,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: _onWoodenFishTap,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Ripple effect
+                        if (_showMeritIncrease)
+                          AnimatedBuilder(
+                            animation: _meritPointsAnimation,
+                            builder: (context, child) {
+                              return Opacity(
+                                opacity: (1 - _meritPointsAnimation.value) * 0.3,
+                                child: Container(
+                                  width: 200 + (100 * _meritPointsAnimation.value),
+                                  height: 200 + (100 * _meritPointsAnimation.value),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withAlpha(77),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        // Wooden fish
+                        ScaleTransition(
+                          scale: _scaleAnimation,
+                          child: Container(
+                            width: 200,
+                            height: 200,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF8D6E63),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withAlpha(77), // 0.3 * 255 = 77
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Container(
+                                width: 150,
+                                height: 150,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFA1887F),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: SvgPicture.asset(
+                                    'assets/images/muyu.svg',
+                                    width: 120,
+                                    height: 120,
+                                    colorFilter: const ColorFilter.mode(
+                                      Colors.white,
+                                      BlendMode.srcIn,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Merit points increase animation
+                        if (_showMeritIncrease)
+                          AnimatedBuilder(
+                            animation: _meritPointsAnimation,
+                            builder: (context, child) {
+                              return Positioned(
+                                top: 50 - (100 * _meritPointsAnimation.value),
+                                child: Opacity(
+                                  opacity: 1.0 - _meritPointsAnimation.value,
+                                  child: Text(
+                                    '+1',
+                                    style: TextStyle(
+                                      color: Colors.amber[300],
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withAlpha(77),
+                                          offset: const Offset(1, 1),
+                                          blurRadius: 3,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -371,6 +580,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),

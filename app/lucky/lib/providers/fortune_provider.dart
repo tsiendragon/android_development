@@ -158,11 +158,14 @@ class FortuneProvider extends ChangeNotifier {
     地支: $earthlyBranch
     功德值: $meritPoints (功德值越高，运势越好)
     
-    请提供一段详细的运势预测文字（200-300字），并为以下四个方面评分（1-5分，5分最好）：
-    - 爱情运势
-    - 事业运势
-    - 健康运势
-    - 财运
+    请提供以下内容：
+    1. 今日运势总体评价（详细描述今日的整体运势，包括吉凶祸福）
+    2. 爱情运势评分（1-5分）和详细解读
+    3. 事业运势评分（1-5分）和详细解读
+    4. 健康运势评分（1-5分）和详细解读
+    5. 财运评分（1-5分）和详细解读
+    6. 今日宜忌（至少3条宜和3条忌）
+    7. 提升运势的建议（具体可行的建议，包括穿着颜色、行为等）
     
     请使用JSON格式返回，格式如下：
     {
@@ -188,7 +191,7 @@ class FortuneProvider extends ChangeNotifier {
           'messages': [
             {
               'role': 'system',
-              'content': '你是一位精通中国传统命理学的大师，擅长根据生辰八字分析运势。'
+              'content': '你是一位精通中国传统命理学的大师，擅长根据生辰八字分析运势。你的预测应该详细、具体，并且根据用户的功德值给予相应的运势加成。功德值越高，运势应该越好。'
             },
             {
               'role': 'user',
@@ -196,6 +199,7 @@ class FortuneProvider extends ChangeNotifier {
             }
           ],
           'temperature': 0.7,
+          'response_format': {'type': 'json_object'},
         }),
       );
       
@@ -207,20 +211,43 @@ class FortuneProvider extends ChangeNotifier {
         try {
           final fortuneData = jsonDecode(content);
           return {
-            'text': fortuneData['text'],
+            'text': fortuneData['text'] ?? '无法获取运势信息',
             'loveRating': _ensureRatingRange(fortuneData['loveRating']),
             'careerRating': _ensureRatingRange(fortuneData['careerRating']),
             'healthRating': _ensureRatingRange(fortuneData['healthRating']),
             'wealthRating': _ensureRatingRange(fortuneData['wealthRating']),
           };
         } catch (e) {
-          throw Exception('Failed to parse OpenAI response: $e');
+          if (kDebugMode) {
+            print('Failed to parse OpenAI response: $e');
+            print('Raw content: $content');
+          }
+          
+          // Try to extract ratings using regex if JSON parsing fails
+          final loveRating = _extractRating(content, '爱情') ?? 3;
+          final careerRating = _extractRating(content, '事业') ?? 3;
+          final healthRating = _extractRating(content, '健康') ?? 3;
+          final wealthRating = _extractRating(content, '财运') ?? 3;
+          
+          return {
+            'text': content,
+            'loveRating': _ensureRatingRange(loveRating),
+            'careerRating': _ensureRatingRange(careerRating),
+            'healthRating': _ensureRatingRange(healthRating),
+            'wealthRating': _ensureRatingRange(wealthRating),
+          };
         }
       } else {
-        throw Exception('OpenAI API error: ${response.statusCode} ${response.body}');
+        if (kDebugMode) {
+          print('OpenAI API error: ${response.statusCode} ${response.body}');
+        }
+        throw Exception('OpenAI API error: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error calling OpenAI API: $e');
+      if (kDebugMode) {
+        print('Error calling OpenAI API: $e');
+      }
+      throw Exception('Error calling OpenAI API');
     }
   }
   
@@ -228,7 +255,17 @@ class FortuneProvider extends ChangeNotifier {
   int _ensureRatingRange(dynamic rating) {
     int ratingInt;
     if (rating is String) {
-      ratingInt = int.tryParse(rating) ?? 3;
+      try {
+        ratingInt = int.parse(rating);
+      } catch (e) {
+        // If parsing fails, try to extract the first digit
+        final match = RegExp(r'\d').firstMatch(rating);
+        if (match != null) {
+          ratingInt = int.parse(match.group(0)!);
+        } else {
+          ratingInt = 3;
+        }
+      }
     } else if (rating is int) {
       ratingInt = rating;
     } else if (rating is double) {
@@ -238,6 +275,34 @@ class FortuneProvider extends ChangeNotifier {
     }
     
     return max(1, min(5, ratingInt));
+  }
+  
+  // Extract rating from text using regex
+  int? _extractRating(String text, String aspect) {
+    // Try different patterns to extract rating
+    final patterns = [
+      '$aspect.*?(\\d)[^\\d]*分',
+      '$aspect.*?评分.*?(\\d)',
+      '$aspect.*?(\\d)\\s*星',
+      '$aspect.*?(\\d)\\s*/\\s*5',
+    ];
+    
+    for (final pattern in patterns) {
+      final regex = RegExp(pattern);
+      final match = regex.firstMatch(text);
+      if (match != null && match.groupCount >= 1) {
+        return int.tryParse(match.group(1)!);
+      }
+    }
+    
+    // If no match found, look for any digit near the aspect name
+    final nearDigitRegex = RegExp('$aspect[^\\d]{0,30}(\\d)');
+    final nearMatch = nearDigitRegex.firstMatch(text);
+    if (nearMatch != null && nearMatch.groupCount >= 1) {
+      return int.tryParse(nearMatch.group(1)!);
+    }
+    
+    return null;
   }
   
   // Helper method to get rating description based on rating value

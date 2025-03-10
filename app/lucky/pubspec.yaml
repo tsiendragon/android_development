@@ -17,6 +17,7 @@ dependencies:
   lunar: ^1.6.1
   http: ^1.1.0
   flutter_secure_storage: ^8.0.0
+  flutter_svg: ^2.0.17
 
 dev_dependencies:
   flutter_test:
@@ -25,6 +26,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
   fonts:
     - family: NotoSansSC
       fonts:
