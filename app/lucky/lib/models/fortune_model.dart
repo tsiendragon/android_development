@@ -11,6 +11,10 @@ class Fortune {
   final int careerRating;   // 事业运势评分
   final int healthRating;   // 健康运势评分
   final int wealthRating;   // 财运评分
+  
+  // New fields for version 1.2 - things to do and avoid to improve fortune
+  final List<String> thingsToDo;      // 宜做事项
+  final List<String> thingsToAvoid;   // 忌做事项
 
   Fortune({
     required this.id,
@@ -23,6 +27,8 @@ class Fortune {
     this.careerRating = 0,
     this.healthRating = 0,
     this.wealthRating = 0,
+    this.thingsToDo = const [],
+    this.thingsToAvoid = const [],
   });
 
   factory Fortune.fromJson(Map<String, dynamic> json) {
@@ -37,6 +43,12 @@ class Fortune {
       careerRating: json['careerRating'] ?? 0,
       healthRating: json['healthRating'] ?? 0,
       wealthRating: json['wealthRating'] ?? 0,
+      thingsToDo: json['thingsToDo'] != null 
+          ? List<String>.from(json['thingsToDo']) 
+          : const [],
+      thingsToAvoid: json['thingsToAvoid'] != null 
+          ? List<String>.from(json['thingsToAvoid']) 
+          : const [],
     );
   }
 
@@ -52,6 +64,8 @@ class Fortune {
       'careerRating': careerRating,
       'healthRating': healthRating,
       'wealthRating': wealthRating,
+      'thingsToDo': thingsToDo,
+      'thingsToAvoid': thingsToAvoid,
     };
   }
 

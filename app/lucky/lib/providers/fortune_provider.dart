@@ -164,8 +164,9 @@ class FortuneProvider extends ChangeNotifier {
     3. 事业运势评分（1-5分）和详细解读
     4. 健康运势评分（1-5分）和详细解读
     5. 财运评分（1-5分）和详细解读
-    6. 今日宜忌（至少3条宜和3条忌）
-    7. 提升运势的建议（具体可行的建议，包括穿着颜色、行为等）
+    6. 今日宜做事项（至少3条，具体可行的建议，需要积极向上，偶尔可以加一些心灵鸡汤）
+    7. 今日忌做事项（至少3条，具体可行的建议，需要积极向上）
+    8. 提升运势的建议（具体可行的建议，包括穿着颜色、行为等）
     
     请使用JSON格式返回，格式如下：
     {
@@ -173,10 +174,12 @@ class FortuneProvider extends ChangeNotifier {
       "loveRating": 评分,
       "careerRating": 评分,
       "healthRating": 评分,
-      "wealthRating": 评分
+      "wealthRating": 评分,
+      "thingsToDo": ["宜做事项1", "宜做事项2", "宜做事项3"],
+      "thingsToAvoid": ["忌做事项1", "忌做事项2", "忌做事项3"]
     }
     
-    只返回JSON格式，不要有其他内容。
+    只返回JSON格式，不要有其他内容。确保返回的JSON格式正确且可解析。
     ''';
     
     try {
@@ -210,12 +213,35 @@ class FortuneProvider extends ChangeNotifier {
         // Parse the JSON response
         try {
           final fortuneData = jsonDecode(content);
+          // Extract things to do and avoid
+          List<String> thingsToDo = [];
+          if (fortuneData['thingsToDo'] != null) {
+            if (fortuneData['thingsToDo'] is List) {
+              thingsToDo = List<String>.from(fortuneData['thingsToDo']);
+            } else if (fortuneData['thingsToDo'] is String) {
+              // Handle case where thingsToDo might be a string
+              thingsToDo = [fortuneData['thingsToDo']];
+            }
+          }
+          
+          List<String> thingsToAvoid = [];
+          if (fortuneData['thingsToAvoid'] != null) {
+            if (fortuneData['thingsToAvoid'] is List) {
+              thingsToAvoid = List<String>.from(fortuneData['thingsToAvoid']);
+            } else if (fortuneData['thingsToAvoid'] is String) {
+              // Handle case where thingsToAvoid might be a string
+              thingsToAvoid = [fortuneData['thingsToAvoid']];
+            }
+          }
+          
           return {
             'text': fortuneData['text'] ?? '无法获取运势信息',
             'loveRating': _ensureRatingRange(fortuneData['loveRating']),
             'careerRating': _ensureRatingRange(fortuneData['careerRating']),
             'healthRating': _ensureRatingRange(fortuneData['healthRating']),
             'wealthRating': _ensureRatingRange(fortuneData['wealthRating']),
+            'thingsToDo': thingsToDo,
+            'thingsToAvoid': thingsToAvoid,
           };
         } catch (e) {
           if (kDebugMode) {
@@ -229,12 +255,18 @@ class FortuneProvider extends ChangeNotifier {
           final healthRating = _extractRating(content, '健康') ?? 3;
           final wealthRating = _extractRating(content, '财运') ?? 3;
           
+          // Try to extract things to do and avoid
+          final thingsToDo = _extractListItems(content, '宜') ?? [];
+          final thingsToAvoid = _extractListItems(content, '忌') ?? [];
+          
           return {
             'text': content,
             'loveRating': _ensureRatingRange(loveRating),
             'careerRating': _ensureRatingRange(careerRating),
             'healthRating': _ensureRatingRange(healthRating),
             'wealthRating': _ensureRatingRange(wealthRating),
+            'thingsToDo': thingsToDo,
+            'thingsToAvoid': thingsToAvoid,
           };
         }
       } else {
@@ -305,6 +337,59 @@ class FortuneProvider extends ChangeNotifier {
     return null;
   }
   
+  // Extract list items from text
+  List<String>? _extractListItems(String text, String keyword) {
+    // Try to find sections with the keyword (宜/忌)
+    final sectionRegex = RegExp('$keyword[^\\n]*\\n((?:[^\\n]+\\n)+)');
+    final sectionMatch = sectionRegex.firstMatch(text);
+    
+    if (sectionMatch != null && sectionMatch.groupCount >= 1) {
+      final sectionText = sectionMatch.group(1)!;
+      
+      // Extract bullet points or numbered items
+      final items = <String>[];
+      
+      // Try different item patterns
+      final bulletRegex = RegExp(r'(?:•|\*|-|\d+\.|\(\d+\))\s*([^\n]+)');
+      
+      final bulletMatches = bulletRegex.allMatches(sectionText);
+      
+      if (bulletMatches.isNotEmpty) {
+        for (final match in bulletMatches) {
+          if (match.groupCount >= 1) {
+            final item = match.group(1)!.trim();
+            if (item.isNotEmpty) {
+              items.add(item);
+            }
+          }
+        }
+      } else {
+        // If no bullet points found, split by newlines
+        final lines = sectionText.split('\n');
+        for (final line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty) {
+            items.add(trimmed);
+          }
+        }
+      }
+      
+      return items;
+    }
+    
+    // If no section found, try to find individual items
+    final itemRegex = RegExp('$keyword[^：]*：([^\\n]+)');
+    final itemMatch = itemRegex.firstMatch(text);
+    
+    if (itemMatch != null && itemMatch.groupCount >= 1) {
+      final itemsText = itemMatch.group(1)!;
+      final items = itemsText.split('、').map((e) => e.trim()).toList();
+      return items.where((item) => item.isNotEmpty).toList();
+    }
+    
+    return null;
+  }
+  
   // Helper method to get rating description based on rating value
   String _getRatingDescription(String aspect, int rating) {
     switch (rating) {
@@ -351,6 +436,10 @@ class FortuneProvider extends ChangeNotifier {
     int healthRating = (baseRating + (random % 3) - 1).clamp(0, 5).toInt();
     int wealthRating = (baseRating + (earthlyBranch.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
     
+    // 生成宜做和忌做事项
+    final thingsToDo = _generateThingsToDo();
+    final thingsToAvoid = _generateThingsToAvoid();
+    
     // 添加个性化元素和四个方面的运势描述
     String fortuneText = '''尊敬的$name，
     
@@ -363,8 +452,15 @@ ${fortunes[fortuneIndex]}
 健康运势：${_getRatingDescription('健康', healthRating)}
 财运：${_getRatingDescription('财运', wealthRating)}
 
-今日宜：冥想、读书、与朋友聚会
-今日忌：冲动消费、争执、熬夜
+今日宜做：
+• ${thingsToDo[0]}
+• ${thingsToDo[1]}
+• ${thingsToDo[2]}
+
+今日忌做：
+• ${thingsToAvoid[0]}
+• ${thingsToAvoid[1]}
+• ${thingsToAvoid[2]}
 
 提升今日运势的建议：多行善事，积累功德，保持平和心态。
 ''';
@@ -375,6 +471,8 @@ ${fortunes[fortuneIndex]}
       'careerRating': careerRating,
       'healthRating': healthRating,
       'wealthRating': wealthRating,
+      'thingsToDo': thingsToDo,
+      'thingsToAvoid': thingsToAvoid,
     };
   }
   
@@ -395,6 +493,88 @@ ${fortunes[fortuneIndex]}
       case '亥': return '猪';
       default: return '未知';
     }
+  }
+  
+  // Generate things to do for mock fortune
+  List<String> _generateThingsToDo() {
+    final options = [
+      '早起锻炼，增强体质',
+      '与家人共进早餐，增进感情',
+      '整理工作计划，提高效率',
+      '阅读一本好书，充实自己',
+      '联系老朋友，维护人际关系',
+      '尝试新的烹饪方式，增添生活乐趣',
+      '冥想放松，平静心情',
+      '参加户外活动，亲近自然',
+      '学习新技能，拓展视野',
+      '做一件善事，积累功德',
+      '写日记，反思成长',
+      '整理居家环境，提升运势',
+      '穿着明亮色彩的衣服，增添活力',
+      '尝试新的工作方法，提高效率',
+      '与积极向上的人交流，获取正能量',
+      '制定未来计划，明确方向',
+      '表达感谢，培养感恩之心',
+      '分享知识，帮助他人',
+      '保持微笑，传递快乐',
+      '尝试新的运动方式，增强体质'
+    ];
+    
+    final random = Random();
+    final result = <String>[];
+    final indices = <int>{};
+    
+    // Select 3 unique items
+    while (indices.length < 3) {
+      indices.add(random.nextInt(options.length));
+    }
+    
+    for (final index in indices) {
+      result.add(options[index]);
+    }
+    
+    return result;
+  }
+  
+  // Generate things to avoid for mock fortune
+  List<String> _generateThingsToAvoid() {
+    final options = [
+      '熬夜，影响健康',
+      '过度消费，影响财运',
+      '情绪化决策，影响判断',
+      '与人争执，破坏人际关系',
+      '拖延工作，影响效率',
+      '过度使用电子设备，伤害眼睛',
+      '暴饮暴食，影响健康',
+      '轻信谣言，误导自己',
+      '过度担忧，消耗精力',
+      '忽视家人，影响家庭和谐',
+      '做重大决定，时机不佳',
+      '参与高风险活动，注意安全',
+      '穿着暗沉色彩，影响心情',
+      '过度批评他人，伤害关系',
+      '忽视休息，透支身体',
+      '独自决策重要事项，需集思广益',
+      '回避问题，延误解决时机',
+      '过度自我怀疑，影响信心',
+      '忽视细节，造成失误',
+      '盲目跟风，失去自我判断'
+    ];
+    
+    final random = Random();
+    final result = <String>[];
+    final indices = <int>{};
+    
+    // Select 3 unique items
+    while (indices.length < 3) {
+      indices.add(random.nextInt(options.length));
+    }
+    
+    for (final index in indices) {
+      result.add(options[index]);
+    }
+    
+    return result;
   }
   
   // Save fortune to favorites

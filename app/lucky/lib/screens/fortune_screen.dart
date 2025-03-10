@@ -229,6 +229,73 @@ class _FortuneScreenState extends State<FortuneScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          // Things to do and avoid section
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Things to do section
+                  Text(
+                    '今日宜做',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...fortuneProvider.todayFortune!.thingsToDo.map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )).toList(),
+                  const SizedBox(height: 20),
+                  // Things to avoid section
+                  Text(
+                    '今日忌做',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...fortuneProvider.todayFortune!.thingsToAvoid.map((item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.cancel, color: Colors.red.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )).toList(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           // Tip card
           Card(
             elevation: 2,

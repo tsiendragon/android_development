@@ -47,9 +47,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
-  late AnimationController _meritPointsAnimController;
-  late Animation<double> _meritPointsAnimation;
-  bool _showMeritIncrease = false;
   int _tapCount = 0;
   bool _canTap = true;
   
@@ -68,27 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
     
-    // Initialize animation controller for merit points increase
-    _meritPointsAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    
-    _meritPointsAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _meritPointsAnimController,
-      curve: Curves.easeOutQuart,
-    ));
-    
-    _meritPointsAnimController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        setState(() {
-          _showMeritIncrease = false;
-        });
-      }
-    });
+
     
     _checkTodayFortune();
     
@@ -143,12 +120,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     
     // Show merit points increase animation
     setState(() {
-      _showMeritIncrease = true;
       _tapCount++;
       _canTap = true;
     });
-    _meritPointsAnimController.reset();
-    _meritPointsAnimController.forward();
     
     // Check if merit points increased by 10 or more
     if (newMeritPoints - _lastMeritPoints >= 10) {
@@ -188,7 +162,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _animationController.dispose();
-    _meritPointsAnimController.dispose();
     super.dispose();
   }
 
@@ -388,107 +361,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
-              // Wooden fish (large)
-              SizedBox(
-                height: 300,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: _onWoodenFishTap,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Ripple effect
-                        if (_showMeritIncrease)
-                          AnimatedBuilder(
-                            animation: _meritPointsAnimation,
-                            builder: (context, child) {
-                              return Opacity(
-                                opacity: (1 - _meritPointsAnimation.value) * 0.3,
-                                child: Container(
-                                  width: 200 + (100 * _meritPointsAnimation.value),
-                                  height: 200 + (100 * _meritPointsAnimation.value),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.withAlpha(77),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        // Wooden fish
-                        ScaleTransition(
-                          scale: _scaleAnimation,
-                          child: Container(
-                            width: 200,
-                            height: 200,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF8D6E63),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withAlpha(77), // 0.3 * 255 = 77
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Container(
-                                width: 150,
-                                height: 150,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFA1887F),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: SvgPicture.asset(
-                                    'assets/images/muyu.svg',
-                                    width: 120,
-                                    height: 120,
-                                    colorFilter: const ColorFilter.mode(
-                                      Colors.white,
-                                      BlendMode.srcIn,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Merit points increase animation
-                        if (_showMeritIncrease)
-                          AnimatedBuilder(
-                            animation: _meritPointsAnimation,
-                            builder: (context, child) {
-                              return Positioned(
-                                top: 50 - (100 * _meritPointsAnimation.value),
-                                child: Opacity(
-                                  opacity: 1.0 - _meritPointsAnimation.value,
-                                  child: Text(
-                                    '+1',
-                                    style: TextStyle(
-                                      color: Colors.amber[300],
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.bold,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withAlpha(77),
-                                          offset: const Offset(1, 1),
-                                          blurRadius: 3,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              const SizedBox(height: 10),
               // Today's fortune card
               Container(
                 margin: const EdgeInsets.all(16.0),
