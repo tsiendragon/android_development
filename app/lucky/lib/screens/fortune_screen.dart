@@ -12,6 +12,33 @@ class FortuneScreen extends StatefulWidget {
 }
 
 class _FortuneScreenState extends State<FortuneScreen> {
+  // Widget to display star ratings for each fortune aspect
+  Widget _buildFortuneRatingRow(BuildContext context, String label, int rating, Color color) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ...List.generate(5, (index) {
+          return Icon(
+            index < rating ? Icons.star : Icons.star_border,
+            color: index < rating ? color : Colors.grey[300],
+            size: 24,
+          );
+        }),
+        const Spacer(),
+        Text(
+          '$rating/5',
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
   bool _isGenerating = false;
 
   Future<void> _generateFortune() async {
@@ -154,6 +181,48 @@ class _FortuneScreenState extends State<FortuneScreen> {
                   Text(
                     fortuneProvider.todayFortune!.fortuneText,
                     style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  // Fortune ratings section
+                  Text(
+                    '运势评分',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Love fortune rating
+                  _buildFortuneRatingRow(
+                    context,
+                    '爱情运势',
+                    fortuneProvider.todayFortune!.loveRating,
+                    Colors.pink,
+                  ),
+                  const SizedBox(height: 12),
+                  // Career fortune rating
+                  _buildFortuneRatingRow(
+                    context,
+                    '事业运势',
+                    fortuneProvider.todayFortune!.careerRating,
+                    Colors.blue,
+                  ),
+                  const SizedBox(height: 12),
+                  // Health fortune rating
+                  _buildFortuneRatingRow(
+                    context,
+                    '健康运势',
+                    fortuneProvider.todayFortune!.healthRating,
+                    Colors.green,
+                  ),
+                  const SizedBox(height: 12),
+                  // Wealth fortune rating
+                  _buildFortuneRatingRow(
+                    context,
+                    '财运',
+                    fortuneProvider.todayFortune!.wealthRating,
+                    Colors.amber,
                   ),
                 ],
               ),

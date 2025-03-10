@@ -6,6 +6,7 @@ import 'package:lucky/providers/user_provider.dart';
 import 'package:lucky/providers/fortune_provider.dart';
 import 'package:lucky/screens/fortune_screen.dart';
 import 'package:lucky/screens/login_screen.dart';
+import 'package:lucky/screens/settings_screen.dart';
 import 'package:lucky/utils/constants.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -16,6 +17,28 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  // Widget to display star ratings for each fortune aspect
+  Widget _buildFortuneRatingRow(BuildContext context, String label, int rating, Color color) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ...List.generate(5, (index) {
+          return Icon(
+            index < rating ? Icons.star : Icons.star_border,
+            color: index < rating ? color : Colors.grey[300],
+            size: 18,
+          );
+        }),
+      ],
+    );
+  }
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   int _tapCount = 0;
@@ -90,6 +113,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  void _navigateToSettingsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -129,9 +158,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                      onPressed: _signOut,
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.settings, color: Colors.white),
+                          onPressed: _navigateToSettingsScreen,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.logout, color: Colors.white),
+                          onPressed: _signOut,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -254,8 +291,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   child: InkWell(
                     onTap: _navigateToFortuneScreen,
                     borderRadius: BorderRadius.circular(16),
-                    child: Padding(
+                    child: Container(
                       padding: const EdgeInsets.all(16.0),
+                      // Make the card taller when fortune is available to accommodate the ratings
+                      constraints: BoxConstraints(
+                        minHeight: fortuneProvider.todayFortune != null ? 250 : 150,
+                      ),
                       child: Column(
                         children: [
                           Row(
@@ -273,9 +314,46 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           ),
                           const SizedBox(height: 16),
                           fortuneProvider.todayFortune != null
-                              ? Text(
-                                  '您今日的运势已生成，点击查看详情',
-                                  style: Theme.of(context).textTheme.bodyLarge,
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '您今日的运势已生成，点击查看详情',
+                                      style: Theme.of(context).textTheme.bodyLarge,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    // Love fortune rating
+                                    _buildFortuneRatingRow(
+                                      context,
+                                      '爱情运势',
+                                      fortuneProvider.todayFortune!.loveRating,
+                                      Colors.pink,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Career fortune rating
+                                    _buildFortuneRatingRow(
+                                      context,
+                                      '事业运势',
+                                      fortuneProvider.todayFortune!.careerRating,
+                                      Colors.blue,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Health fortune rating
+                                    _buildFortuneRatingRow(
+                                      context,
+                                      '健康运势',
+                                      fortuneProvider.todayFortune!.healthRating,
+                                      Colors.green,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Wealth fortune rating
+                                    _buildFortuneRatingRow(
+                                      context,
+                                      '财运',
+                                      fortuneProvider.todayFortune!.wealthRating,
+                                      Colors.amber,
+                                    ),
+                                  ],
                                 )
                               : Text(
                                   '点击生成今日运势',

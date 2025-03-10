@@ -5,6 +5,12 @@ class Fortune {
   final String fortuneText;
   final bool isFavorite;
   final DateTime createdAt;
+  
+  // New fields for version 1.1 - ratings for different aspects (0-5 stars)
+  final int loveRating;     // 爱情运势评分
+  final int careerRating;   // 事业运势评分
+  final int healthRating;   // 健康运势评分
+  final int wealthRating;   // 财运评分
 
   Fortune({
     required this.id,
@@ -13,6 +19,10 @@ class Fortune {
     required this.fortuneText,
     this.isFavorite = false,
     required this.createdAt,
+    this.loveRating = 0,
+    this.careerRating = 0,
+    this.healthRating = 0,
+    this.wealthRating = 0,
   });
 
   factory Fortune.fromJson(Map<String, dynamic> json) {
@@ -23,6 +33,10 @@ class Fortune {
       fortuneText: json['fortuneText'],
       isFavorite: json['isFavorite'] ?? false,
       createdAt: DateTime.parse(json['createdAt']),
+      loveRating: json['loveRating'] ?? 0,
+      careerRating: json['careerRating'] ?? 0,
+      healthRating: json['healthRating'] ?? 0,
+      wealthRating: json['wealthRating'] ?? 0,
     );
   }
 
@@ -34,6 +48,10 @@ class Fortune {
       'fortuneText': fortuneText,
       'isFavorite': isFavorite,
       'createdAt': createdAt.toIso8601String(),
+      'loveRating': loveRating,
+      'careerRating': careerRating,
+      'healthRating': healthRating,
+      'wealthRating': wealthRating,
     };
   }
 
@@ -44,6 +62,10 @@ class Fortune {
     String? fortuneText,
     bool? isFavorite,
     DateTime? createdAt,
+    int? loveRating,
+    int? careerRating,
+    int? healthRating,
+    int? wealthRating,
   }) {
     return Fortune(
       id: id ?? this.id,
@@ -52,6 +74,10 @@ class Fortune {
       fortuneText: fortuneText ?? this.fortuneText,
       isFavorite: isFavorite ?? this.isFavorite,
       createdAt: createdAt ?? this.createdAt,
+      loveRating: loveRating ?? this.loveRating,
+      careerRating: careerRating ?? this.careerRating,
+      healthRating: healthRating ?? this.healthRating,
+      wealthRating: wealthRating ?? this.wealthRating,
     );
   }
 }

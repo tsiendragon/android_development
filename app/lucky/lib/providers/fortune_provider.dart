@@ -1,10 +1,13 @@
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'package:lucky/models/fortune_model.dart';
 import 'package:lucky/models/user_model.dart';
 import 'package:intl/intl.dart';
 import 'package:lunar/lunar.dart';
+import 'package:http/http.dart' as http;
+import 'package:lucky/providers/api_key_provider.dart';
 
 class FortuneProvider extends ChangeNotifier {
   Fortune? _todayFortune;
@@ -14,6 +17,14 @@ class FortuneProvider extends ChangeNotifier {
   Fortune? get todayFortune => _todayFortune;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  
+  // Reference to the ApiKeyProvider
+  ApiKeyProvider? _apiKeyProvider;
+  
+  // Set the ApiKeyProvider reference
+  void setApiKeyProvider(ApiKeyProvider provider) {
+    _apiKeyProvider = provider;
+  }
   
   // Check if today's fortune is already generated
   Future<bool> checkTodayFortune(String userId) async {
@@ -37,82 +48,213 @@ class FortuneProvider extends ChangeNotifier {
     }
   }
   
-  // Generate today's fortune using OpenAI API
+  // Generate today's fortune
   Future<bool> generateTodayFortune(User user) async {
-    if (_isLoading) return false;
-    
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
     try {
       final today = DateTime.now();
-      final todayFormatted = DateFormat('yyyy-MM-dd').format(today);
-      final fortuneKey = 'fortune_${user.id}_$todayFormatted';
+      final todayStr = DateFormat('yyyy-MM-dd').format(today);
       
-      // Convert solar date to lunar date for Chinese zodiac calculations
+      // Check if we already have a fortune for today
+      final prefs = await SharedPreferences.getInstance();
+      final fortuneKey = 'fortune_${user.id}_$todayStr';
+      if (prefs.containsKey(fortuneKey)) {
+        // Load today's fortune
+        final fortuneJson = jsonDecode(prefs.getString(fortuneKey)!);
+        _todayFortune = Fortune.fromJson(fortuneJson);
+        notifyListeners();
+        return true;
+      }
+      
+      // Calculate Chinese zodiac
       final lunar = Lunar.fromDate(user.birthDate);
       final chineseZodiac = _getChineseZodiac(lunar.getYearZhi());
       final heavenlyStem = lunar.getYearGan(); // 天干
       final earthlyBranch = lunar.getYearZhi(); // 地支
-      final eightCharacters = '${lunar.getYearGan()}${lunar.getYearZhi()} ${lunar.getMonthGan()}${lunar.getMonthZhi()} ${lunar.getDayGan()}${lunar.getDayZhi()} ${lunar.getTimeGan()}${lunar.getTimeZhi()}';
       
-      // Prepare the prompt for OpenAI
-      // This will be used when we implement the actual OpenAI API call
-      // For now, we're using a mock implementation
-      // ignore: unused_local_variable
-      final prompt = '''
-根据用户的生辰八字信息，生成今日运势预测：
-- 用户信息：${user.name}，${user.gender}
-- 出生日期：${DateFormat('yyyy-MM-dd').format(user.birthDate)}
-- 出生时间：${user.birthTime}
-- 出生地点：${user.birthPlace}
-- 生肖：$chineseZodiac
-- 八字：$eightCharacters
-- 功德值：${user.meritPoints}
-
-请生成一段简短的今日（${DateFormat('yyyy年MM月dd日').format(today)}）运势预测，包括整体运势、事业、财运等方面。
-''';
-
-      // For MVP, we'll simulate the API call with a mock response
-      // In a real app, this would call the OpenAI API
-      final fortuneText = _generateMockFortune(
-        user.name, 
-        chineseZodiac, 
-        heavenlyStem,
-        earthlyBranch,
-        user.meritPoints
-      );
+      // Generate fortune
+      Map<String, dynamic> fortuneResult;
+      
+      // Check if API key is available
+      final apiKeyProvider = _apiKeyProvider;
+      if (apiKeyProvider != null && apiKeyProvider.hasApiKey) {
+        // Use OpenAI API to generate fortune
+        try {
+          fortuneResult = await _generateOpenAIFortune(
+            user.name,
+            chineseZodiac,
+            heavenlyStem,
+            earthlyBranch,
+            user.meritPoints,
+            apiKeyProvider.openAiApiKey!
+          );
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error generating fortune with OpenAI: $e');
+          }
+          // Fallback to mock fortune if API call fails
+          fortuneResult = _generateMockFortuneWithRatings(
+            user.name,
+            chineseZodiac,
+            heavenlyStem,
+            earthlyBranch,
+            user.meritPoints
+          );
+        }
+      } else {
+        // Use mock fortune generation
+        fortuneResult = _generateMockFortuneWithRatings(
+          user.name,
+          chineseZodiac,
+          heavenlyStem,
+          earthlyBranch,
+          user.meritPoints
+        );
+      }
       
       // Create and save the fortune
       final fortune = Fortune(
         id: 'fortune_${DateTime.now().millisecondsSinceEpoch}',
         userId: user.id,
         date: today,
-        fortuneText: fortuneText,
+        fortuneText: fortuneResult['text'],
         createdAt: DateTime.now(),
+        loveRating: fortuneResult['loveRating'],
+        careerRating: fortuneResult['careerRating'],
+        healthRating: fortuneResult['healthRating'],
+        wealthRating: fortuneResult['wealthRating'],
       );
       
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(fortuneKey, json.encode(fortune.toJson()));
+      // Save to preferences
+      await prefs.setString(fortuneKey, jsonEncode(fortune.toJson()));
       
       _todayFortune = fortune;
-      _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _isLoading = false;
-      _error = '生成运势失败，请稍后再试';
       if (kDebugMode) {
         print('Error generating fortune: $e');
       }
-      notifyListeners();
       return false;
     }
   }
   
-  // Mock fortune generation for MVP
-  String _generateMockFortune(String name, String zodiac, String heavenlyStem, String earthlyBranch, int meritPoints) {
+  // Generate fortune using OpenAI API
+  Future<Map<String, dynamic>> _generateOpenAIFortune(
+    String name,
+    String zodiac,
+    String heavenlyStem,
+    String earthlyBranch,
+    int meritPoints,
+    String apiKey
+  ) async {
+    final url = Uri.parse('https://api.openai.com/v1/chat/completions');
+    
+    final prompt = '''
+    作为一位精通中国传统命理学的大师，请根据以下信息为用户生成今日运势预测：
+    
+    用户姓名: $name
+    生肖: $zodiac
+    天干: $heavenlyStem
+    地支: $earthlyBranch
+    功德值: $meritPoints (功德值越高，运势越好)
+    
+    请提供一段详细的运势预测文字（200-300字），并为以下四个方面评分（1-5分，5分最好）：
+    - 爱情运势
+    - 事业运势
+    - 健康运势
+    - 财运
+    
+    请使用JSON格式返回，格式如下：
+    {
+      "text": "运势预测文字...",
+      "loveRating": 评分,
+      "careerRating": 评分,
+      "healthRating": 评分,
+      "wealthRating": 评分
+    }
+    
+    只返回JSON格式，不要有其他内容。
+    ''';
+    
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode({
+          'model': 'gpt-3.5-turbo',
+          'messages': [
+            {
+              'role': 'system',
+              'content': '你是一位精通中国传统命理学的大师，擅长根据生辰八字分析运势。'
+            },
+            {
+              'role': 'user',
+              'content': prompt
+            }
+          ],
+          'temperature': 0.7,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final content = responseData['choices'][0]['message']['content'];
+        
+        // Parse the JSON response
+        try {
+          final fortuneData = jsonDecode(content);
+          return {
+            'text': fortuneData['text'],
+            'loveRating': _ensureRatingRange(fortuneData['loveRating']),
+            'careerRating': _ensureRatingRange(fortuneData['careerRating']),
+            'healthRating': _ensureRatingRange(fortuneData['healthRating']),
+            'wealthRating': _ensureRatingRange(fortuneData['wealthRating']),
+          };
+        } catch (e) {
+          throw Exception('Failed to parse OpenAI response: $e');
+        }
+      } else {
+        throw Exception('OpenAI API error: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error calling OpenAI API: $e');
+    }
+  }
+  
+  // Ensure rating is within valid range (1-5)
+  int _ensureRatingRange(dynamic rating) {
+    int ratingInt;
+    if (rating is String) {
+      ratingInt = int.tryParse(rating) ?? 3;
+    } else if (rating is int) {
+      ratingInt = rating;
+    } else if (rating is double) {
+      ratingInt = rating.round();
+    } else {
+      ratingInt = 3;
+    }
+    
+    return max(1, min(5, ratingInt));
+  }
+  
+  // Helper method to get rating description based on rating value
+  String _getRatingDescription(String aspect, int rating) {
+    switch (rating) {
+      case 0: return '$aspect运势极差，需谨慎行事';
+      case 1: return '$aspect运势不佳，宜低调行事';
+      case 2: return '$aspect运势一般，保持平常心';
+      case 3: return '$aspect运势尚可，有小幸运';
+      case 4: return '$aspect运势良好，可把握机会';
+      case 5: return '$aspect运势极佳，大吉大利';
+      default: return '$aspect运势一般';
+    }
+  }
+  
+  // Generate mock fortune with ratings for all aspects
+  Map<String, dynamic> _generateMockFortuneWithRatings(String name, String zodiac, String heavenlyStem, String earthlyBranch, int meritPoints) {
     final fortunes = [
       '今天整体运势不错，工作上可能会有意外收获。建议多关注人际关系，可能会有贵人相助。财运方面平稳，适合理财规划。',
       '今日运势平平，工作中需要更加专注，避免分心。人际关系方面可能会有小摩擦，建议保持冷静。财运一般，不宜大额支出。',
@@ -133,18 +275,42 @@ class FortuneProvider extends ChangeNotifier {
       fortuneIndex = 1; // 较差的运势
     }
     
-    // 添加个性化元素
-    return '''尊敬的$name，
+    // 生成四个方面的星级评分 (0-5星)
+    // 基于功德值、生肖和八字生成随机但有规律的评分
+    final random = Random().nextInt(100);
+    final baseRating = (meritPoints / 20).clamp(1.0, 5.0).floor();
+    
+    // 使用不同的计算方式，让各方面评分有所区别
+    int loveRating = (baseRating + (zodiac.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
+    int careerRating = (baseRating + (heavenlyStem.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
+    int healthRating = (baseRating + (random % 3) - 1).clamp(0, 5).toInt();
+    int wealthRating = (baseRating + (earthlyBranch.codeUnitAt(0) % 3) - 1).clamp(0, 5).toInt();
+    
+    // 添加个性化元素和四个方面的运势描述
+    String fortuneText = '''尊敬的$name，
     
 您的生肖为$zodiac，八字天干为$heavenlyStem，地支为$earthlyBranch。根据您的八字和当前功德值($meritPoints)分析：
 
 ${fortunes[fortuneIndex]}
+
+爱情运势：${_getRatingDescription('爱情', loveRating)}
+事业运势：${_getRatingDescription('事业', careerRating)}
+健康运势：${_getRatingDescription('健康', healthRating)}
+财运：${_getRatingDescription('财运', wealthRating)}
 
 今日宜：冥想、读书、与朋友聚会
 今日忌：冲动消费、争执、熬夜
 
 提升今日运势的建议：多行善事，积累功德，保持平和心态。
 ''';
+    
+    return {
+      'text': fortuneText,
+      'loveRating': loveRating,
+      'careerRating': careerRating,
+      'healthRating': healthRating,
+      'wealthRating': wealthRating,
+    };
   }
   
   // Get Chinese zodiac based on earthly branch
