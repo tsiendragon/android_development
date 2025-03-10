@@ -3,16 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:lucky/providers/auth_provider.dart';
 import 'package:lucky/providers/user_provider.dart';
-import 'package:lucky/screens/home_screen.dart';
+import 'package:lucky/screens/main_screen.dart';
 import 'package:lucky/utils/constants.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String userId;
-  
-  const ProfileSetupScreen({
-    super.key,
-    required this.userId,
-  });
+
+  const ProfileSetupScreen({super.key, required this.userId});
 
   @override
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
@@ -27,25 +24,25 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _birthPlaceController = TextEditingController();
   bool _isLoading = false;
   int _currentStep = 0;
-  
+
   @override
   void dispose() {
     _nameController.dispose();
     _birthPlaceController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
+
       final success = await userProvider.saveUserInfo(
         id: widget.userId,
         name: _nameController.text.trim(),
@@ -55,25 +52,25 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         birthPlace: _birthPlaceController.text.trim(),
         authProvider: authProvider.authType ?? 'unknown',
       );
-      
+
       if (success) {
         await authProvider.setProfileComplete(true);
-        
+
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            MaterialPageRoute(builder: (_) => const MainScreen()),
           );
         }
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('保存个人信息失败，请重试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('保存个人信息失败，请重试')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('发生错误，请重试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('发生错误，请重试')));
       }
     } finally {
       if (mounted) {
@@ -83,7 +80,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       }
     }
   }
-  
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -92,7 +89,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       lastDate: DateTime.now(),
       locale: const Locale('zh'),
     );
-    
+
     if (picked != null && picked != _birthDate) {
       setState(() {
         _birthDate = picked;
@@ -214,9 +211,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                         labelText: '出生日期',
                         prefixIcon: Icon(Icons.calendar_today),
                       ),
-                      child: Text(
-                        DateFormat('yyyy年MM月dd日').format(_birthDate),
-                      ),
+                      child: Text(DateFormat('yyyy年MM月dd日').format(_birthDate)),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -227,12 +222,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                       prefixIcon: Icon(Icons.access_time),
                     ),
                     value: _birthTime,
-                    items: AppConstants.timePeriods.keys.map((String time) {
-                      return DropdownMenuItem<String>(
-                        value: time,
-                        child: Text(time),
-                      );
-                    }).toList(),
+                    items:
+                        AppConstants.timePeriods.keys.map((String time) {
+                          return DropdownMenuItem<String>(
+                            value: time,
+                            child: Text(time),
+                          );
+                        }).toList(),
                     onChanged: (String? newValue) {
                       if (newValue != null) {
                         setState(() {
@@ -267,10 +263,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   const SizedBox(height: 20),
                   const Text(
                     '提示：出生地点信息将用于更准确地计算您的八字和运势。',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   if (_isLoading) ...[
                     const SizedBox(height: 20),

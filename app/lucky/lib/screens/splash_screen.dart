@@ -5,7 +5,7 @@ import 'package:lucky/providers/auth_provider.dart';
 import 'package:lucky/providers/user_provider.dart';
 import 'package:lucky/screens/login_screen.dart';
 import 'package:lucky/screens/profile_setup_screen.dart';
-import 'package:lucky/screens/home_screen.dart';
+import 'package:lucky/screens/main_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,7 +14,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
 
@@ -25,24 +26,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       duration: const Duration(seconds: 2),
       vsync: this,
     );
-    
+
     _animation = CurvedAnimation(
       parent: _animationController,
       curve: Curves.easeInOut,
     );
-    
+
     _animationController.forward();
-    
+
     // Check authentication status after animation
     Timer(const Duration(seconds: 2), () {
       _checkAuthAndNavigate();
     });
   }
-  
+
   Future<void> _checkAuthAndNavigate() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    
+
     // Wait for auth provider to initialize
     if (authProvider.status == AuthStatus.initial) {
       Timer(const Duration(milliseconds: 500), () {
@@ -50,23 +51,25 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       });
       return;
     }
-    
+
     if (authProvider.status == AuthStatus.authenticated) {
       // Load user data
       await userProvider.loadUser(authProvider.userId!);
-      
+
       if (authProvider.isProfileComplete) {
-        // Navigate to home screen
+        // Navigate to main screen
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            MaterialPageRoute(builder: (_) => const MainScreen()),
           );
         }
       } else {
         // Navigate to profile setup
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => ProfileSetupScreen(userId: authProvider.userId!)),
+            MaterialPageRoute(
+              builder: (_) => ProfileSetupScreen(userId: authProvider.userId!),
+            ),
           );
         }
       }
@@ -95,8 +98,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Theme.of(context).colorScheme.primary.withAlpha(204), // 0.8 * 255 = 204
-              Theme.of(context).colorScheme.secondary.withAlpha(153), // 0.6 * 255 = 153
+              Theme.of(
+                context,
+              ).colorScheme.primary.withAlpha(204), // 0.8 * 255 = 204
+              Theme.of(
+                context,
+              ).colorScheme.secondary.withAlpha(153), // 0.6 * 255 = 153
             ],
           ),
         ),
@@ -149,9 +156,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 opacity: _animation,
                 child: Text(
                   '探索命运，把握未来',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.white,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(color: Colors.white),
                 ),
               ),
               const SizedBox(height: 50),

@@ -47,9 +47,8 @@ class _MyAppState extends State<MyApp> {
       );
       fortuneProvider.setApiKeyProvider(apiKeyProvider);
 
-      apiKeyProvider.loadApiKey();
-      // TODO: 添加主题加载
-      // themeProvider.loadThemeSettings();
+      // 使用Future.microtask来延迟执行，避免在构建过程中触发状态更新
+      Future.microtask(() => apiKeyProvider.loadApiKey());
     });
   }
 

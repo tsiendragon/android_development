@@ -52,7 +52,8 @@ class FortuneProvider extends ChangeNotifier {
   Future<bool> generateTodayFortune(User user) async {
     try {
       _isLoading = true;
-      notifyListeners();
+      // Delay the notification to avoid build-time updates
+      Future.microtask(() => notifyListeners());
 
       final today = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(today);
